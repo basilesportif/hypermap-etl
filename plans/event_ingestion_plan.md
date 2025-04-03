@@ -44,8 +44,6 @@ MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-url>/<database>?retryWr
 # Base Blockchain RPC
 BASE_RPC_URL=https://base-mainnet.infura.io/v3/<api-key>
 
-# Contract Configuration
-CONTRACT_ADDRESS=0x000000000044C6B8Cb4d8f0F889a3E47664EAeda
 
 # Indexing Configuration
 START_BLOCK=27270000
@@ -53,67 +51,13 @@ CHUNK_SIZE=20000
 BASE_DELAY_MS=1000
 ```
 
-## Project Structure
-
-```
-/hypermap-etl
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── events/
-│   │   │   │   └── route.ts     # API route for event queries
-│   │   │   ├── namespaces/
-│   │   │   │   └── route.ts     # API route for namespace queries
-│   │   │   └── healthcheck/
-│   │   │       └── route.ts     # Health check endpoint
-│   │   ├── page.tsx             # Main dashboard UI
-│   │   └── layout.tsx           # App layout
-│   ├── lib/
-│   │   ├── mongodb.ts           # MongoDB connection
-│   │   ├── blockchain.ts        # Base blockchain connection
-│   │   └── utils.ts             # Shared utilities
-│   ├── schemas/
-│   │   ├── events.ts            # Event schema definitions
-│   │   ├── namespace.ts         # Namespace entry schema
-│   │   └── index.ts             # Schema exports
-│   ├── types/
-│   │   ├── events.ts            # TypeScript interfaces for events
-│   │   ├── hypermap.ts          # TypeScript interfaces for HyperMap
-│   │   └── index.ts             # Type exports
-│   ├── ai/
-│   │   ├── helpers.ts           # AI helper functions
-│   │   ├── analysis.ts          # Event analysis logic
-│   │   └── index.ts             # AI module exports
-│   └── workers/
-│       ├── eventIndexer.ts      # Blockchain event indexing worker
-│       ├── namespaceBuilder.ts  # Namespace state builder worker
-│       └── metadataFetcher.ts   # Metadata/fact/note processing worker
-├── public/
-├── plans/
-│   └── event_ingestion_plan.md  # This document
-├── .env.local                   # Environment variables for local development
-└── .env.example                 # Example environment variables
-```
-
 ## Database Schema
 
 We'll be storing the following collections in MongoDB:
 
-1. **RawEvents**
-   - Stores all raw events from the blockchain
-   - Fields: `eventName`, `blockNumber`, `transactionHash`, `logIndex`, `parameters`, `timestamp`
-
-2. **NamespaceEntries**
+1. **HypermapEntries**
    - Stores processed namespace entries
    - Fields: `namehash`, `label`, `parentHash`, `fullName`, `owner`, `gene`, `notes`, `facts`, `children`, `creationBlock`, `lastUpdateBlock`
-
-3. **MetadataCache**
-   - Caches metadata fetched from external URLs
-   - Fields: `uri`, `hash`, `content`, `lastFetched`
-
-4. **IndexState**
-   - Stores the state of the indexing process
-   - Fields: `lastProcessedBlock`, `lastSavedBlock`, `chainId`, `contractAddress`
 
 ## Implementation Plan
 
@@ -122,12 +66,16 @@ We'll be storing the following collections in MongoDB:
 1. **Event Indexer Worker**
    - Connect to Base blockchain using Ethers.js
    - Fetch events in chunks using the contract address
-   - Store raw events in MongoDB
-   - Track the last processed block
+   - Store *only HypermapEntries* in MongoDB
 
 2. **Schema Implementation**
    - Define MongoDB schemas for events and namespaces
    - Create TypeScript interfaces for event data
+
+3. MongoDB Indexes
+ - create indexes for the following fields:
+   - creationBlock
+   - label
 
 ### Phase 2: Namespace Building
 
@@ -150,43 +98,6 @@ We'll be storing the following collections in MongoDB:
 2. **Dashboard UI**
    - Build a simple dashboard for monitoring indexing status
    - Create visualizations for namespace hierarchy
-
-### Phase 4: AI Integration
-
-1. **AI Helpers**
-   - Implement functions for analyzing event patterns
-   - Create utilities for extracting insights from namespace data
-
-2. **Metadata Analysis**
-   - Process and analyze metadata from facts and notes
-   - Generate reports on namespace usage patterns
-
-## Technical Considerations
-
-1. **Scalability**
-   - Use efficient indexing for MongoDB collections
-   - Implement pagination for large result sets
-   - Consider sharding for very large datasets
-
-2. **Reliability**
-   - Implement robust error handling for RPC connections
-   - Add retry logic for failed requests
-   - Store indexing state for recovery after failures
-
-3. **Performance**
-   - Use batch processing for event handling
-   - Implement caching for frequently accessed data
-   - Consider using change streams for real-time updates
-
-4. **Security**
-   - Properly validate and sanitize all inputs
-   - Use environment variables for sensitive configuration
-   - Implement rate limiting for public API endpoints
-
-## Next Steps
-
-1. Set up MongoDB connection and schema validation
-2. Implement the event indexer to fetch and store events
-3. Build the namespace state processor
-4. Create API endpoints for querying data
-5. Implement a simple monitoring dashboard
+   - do it like a file directory/explorer
+      - show facts/notes differently
+      - show children/parent relationships
