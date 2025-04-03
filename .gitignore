@@ -53,3 +53,6 @@ reset-items-*
 vector-*backup_tests/node_modules/
 tmp/*
 logs/*
+
+# scratchpad
+scratch/*
