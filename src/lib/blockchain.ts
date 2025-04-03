@@ -3,7 +3,10 @@ import {
   HypermapEvent, MintEvent, FactEvent, NoteEvent, 
   GeneEvent, TransferEvent, ZeroEvent, UpgradedEvent 
 } from '../types';
-import { CONTRACT_ADDRESS, DEFAULT_START_BLOCK, DEFAULT_CHUNK_SIZE, DEFAULT_BASE_DELAY_MS } from '../constants';
+import { 
+  CONTRACT_ADDRESS, DEFAULT_START_BLOCK, DEFAULT_CHUNK_SIZE, 
+  DEFAULT_BASE_DELAY_MS, MIN_CHUNK_SIZE, MAX_RETRIES 
+} from '../constants';
 import hypermapAbi from '../abi/hypermap.abi.json';
 
 // Environment variables
@@ -51,15 +54,41 @@ export function listenForEvents(eventNames: string[] = []) {
   return contract;
 }
 
-// Function to get past events from the contract
+// Function to get past events from the contract with exponential backoff
 export async function getPastEvents(
   eventName: string,
   fromBlock: number,
   toBlock: number | 'latest' = 'latest'
 ) {
-  const filter = contract.filters[eventName]();
-  const events = await contract.queryFilter(filter, fromBlock, toBlock);
-  return events;
+  let retryCount = 0;
+  let baseDelay = DEFAULT_BASE_DELAY_MS;
+  
+  while (true) {
+    try {
+      const filter = contract.filters[eventName]();
+      const events = await contract.queryFilter(filter, fromBlock, toBlock);
+      return events;
+    } catch (error) {
+      // Check if error is rate limiting or too many requests
+      const isRateLimitError = 
+        error.toString().includes("Too Many Requests") || 
+        error.toString().includes("rate limit") ||
+        (error.code === "BAD_DATA" && error.toString().includes("missing response"));
+      
+      if (isRateLimitError && retryCount < MAX_RETRIES) {
+        retryCount++;
+        // Calculate exponential delay with random jitter
+        const delay = baseDelay * Math.pow(2, retryCount) + Math.random() * 1000;
+        console.log(`Rate limited on ${eventName} (blocks ${fromBlock}-${toBlock}). Retrying in ${Math.round(delay/1000)} seconds... (Attempt ${retryCount}/${MAX_RETRIES})`);
+        
+        // Wait before trying again
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        // Either not a rate limit error or exceeded retries
+        throw error;
+      }
+    }
+  }
 }
 
 // Function to get multiple event types in a single block range
@@ -68,23 +97,26 @@ export async function getMultipleEvents(
   fromBlock: number,
   toBlock: number
 ): Promise<ethers.Log[]> {
-  const eventPromises = eventNames.map(eventName => 
-    getPastEvents(eventName, fromBlock, toBlock)
-  );
+  // Get events sequentially to avoid overwhelming the RPC provider
+  let allEvents: ethers.Log[] = [];
   
-  const results = await Promise.all(eventPromises);
-  // Flatten and sort by block number and log index
-  const allEvents = results.flat().sort((a, b) => {
+  for (const eventName of eventNames) {
+    const events = await getPastEvents(eventName, fromBlock, toBlock);
+    allEvents = allEvents.concat(events);
+  }
+  
+  // Sort by block number and log index
+  allEvents.sort((a, b) => {
     if (a.blockNumber !== b.blockNumber) {
       return a.blockNumber - b.blockNumber;
     }
-    return a.logIndex - b.logIndex;
+    return (a.index || 0) - (b.index || 0); // Use index for ethers v6
   });
   
   return allEvents;
 }
 
-// Process events in chunks
+// Process events in chunks with adaptive chunk size and exponential backoff
 export async function processEventsInChunks(
   fromBlock: number,
   toBlock: number,
@@ -92,43 +124,111 @@ export async function processEventsInChunks(
   eventNames: string[] = ['Mint', 'Fact', 'Note', 'Gene', 'Transfer', 'Zero', 'Upgraded'],
   chunkSizeOverride?: number
 ) {
-  const useChunkSize = chunkSizeOverride || chunkSize;
+  let adaptiveChunkSize = chunkSizeOverride || chunkSize;
   let currentFromBlock = fromBlock;
+  let consecutiveSuccesses = 0;
+  let consecutiveFailures = 0;
 
   while (currentFromBlock <= toBlock) {
-    const currentToBlock = Math.min(currentFromBlock + useChunkSize - 1, toBlock);
+    const currentToBlock = Math.min(currentFromBlock + adaptiveChunkSize - 1, toBlock);
+    let retryCount = 0;
+    let currentDelay = baseDelayMs;
+    let success = false;
     
-    try {
-      console.log(`Processing blocks ${currentFromBlock} to ${currentToBlock}...`);
-      const events = await getMultipleEvents(eventNames, currentFromBlock, currentToBlock);
-      
-      // Process events
-      const processedEvents = await Promise.all(events.map(processEvent));
-      
-      // Filter out null values (failed processing)
-      const validEvents = processedEvents.filter(e => e !== null) as HypermapEvent[];
-      
-      // Call the callback with processed events
-      if (validEvents.length > 0) {
-        try {
-          await callback(validEvents);
-        } catch (callbackError) {
-          console.error(`Error in callback for blocks ${currentFromBlock} to ${currentToBlock}:`, callbackError);
-          // Continue processing next chunk
+    // Retry loop for this chunk
+    while (!success && retryCount <= MAX_RETRIES) {
+      try {
+        console.log(`Processing blocks ${currentFromBlock} to ${currentToBlock}${retryCount > 0 ? ` (retry ${retryCount}/${MAX_RETRIES})` : ''}...`);
+        console.log(`Current chunk size: ${adaptiveChunkSize} blocks`);
+        
+        const events = await getMultipleEvents(eventNames, currentFromBlock, currentToBlock);
+        
+        // Process events
+        const processedEvents = await Promise.all(events.map(processEvent));
+        
+        // Filter out null values (failed processing)
+        const validEvents = processedEvents.filter(e => e !== null) as HypermapEvent[];
+        
+        // Call the callback with processed events
+        if (validEvents.length > 0) {
+          try {
+            await callback(validEvents);
+          } catch (callbackError) {
+            console.error(`Error in callback for blocks ${currentFromBlock} to ${currentToBlock}:`, callbackError);
+            // Continue processing next chunk
+          }
+        }
+        
+        console.log(`Processed ${validEvents.length} events in blocks ${currentFromBlock} to ${currentToBlock}`);
+        success = true;
+        
+        // Adapt chunk size based on success
+        consecutiveSuccesses++;
+        consecutiveFailures = 0;
+        
+        // Increase chunk size after several consecutive successes
+        if (consecutiveSuccesses >= 3) {
+          const oldChunkSize = adaptiveChunkSize;
+          adaptiveChunkSize = Math.min(adaptiveChunkSize * 1.5, DEFAULT_CHUNK_SIZE);
+          if (oldChunkSize !== adaptiveChunkSize) {
+            console.log(`Increased chunk size to ${adaptiveChunkSize} after ${consecutiveSuccesses} consecutive successes`);
+          }
+          consecutiveSuccesses = 0;
+        }
+      } catch (error) {
+        // Check if error is rate limiting or too many requests
+        const isRateLimitError = 
+          error.toString().includes("Too Many Requests") || 
+          error.toString().includes("rate limit") ||
+          (error.code === "BAD_DATA" && error.toString().includes("missing response"));
+        
+        console.error(`Error processing blocks ${currentFromBlock} to ${currentToBlock}:`, error);
+        
+        if (isRateLimitError && retryCount < MAX_RETRIES) {
+          retryCount++;
+          consecutiveFailures++;
+          
+          // Calculate exponential delay with random jitter
+          const delay = currentDelay * Math.pow(2, retryCount) + Math.random() * 1000;
+          console.log(`Rate limited. Retrying in ${Math.round(delay/1000)} seconds... (Attempt ${retryCount}/${MAX_RETRIES})`);
+          
+          // Wait before trying again
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          // Reduce chunk size if we're seeing rate limit errors
+          if (consecutiveFailures >= 2 || retryCount >= 3) {
+            const oldChunkSize = adaptiveChunkSize;
+            adaptiveChunkSize = Math.max(Math.floor(adaptiveChunkSize / 2), MIN_CHUNK_SIZE);
+            
+            if (oldChunkSize !== adaptiveChunkSize) {
+              console.log(`Reduced chunk size to ${adaptiveChunkSize} due to rate limiting`);
+            }
+            
+            // If we've significantly reduced the chunk size, try again with the new size
+            if (adaptiveChunkSize < oldChunkSize / 2) {
+              console.log(`Switching to smaller chunk size of ${adaptiveChunkSize} blocks...`);
+              break; // Exit the retry loop to try again with the new chunk size
+            }
+          }
+        } else {
+          // Non-rate limiting error or max retries exceeded, continue to next chunk
+          consecutiveSuccesses = 0;
+          consecutiveFailures++;
+          
+          console.log(`Moving to next chunk after error`);
+          success = true; // to exit the retry loop
         }
       }
-      
-      console.log(`Processed ${validEvents.length} events in blocks ${currentFromBlock} to ${currentToBlock}`);
-    } catch (error) {
-      console.error(`Error processing blocks ${currentFromBlock} to ${currentToBlock}:`, error);
-      // Continue with the next chunk instead of throwing
     }
     
-    // Move to next chunk
-    currentFromBlock = currentToBlock + 1;
-    
-    // Add delay to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, baseDelayMs));
+    // Only advance to the next chunk if we had success or exhausted retries
+    if (success) {
+      // Move to next chunk
+      currentFromBlock = currentToBlock + 1;
+      
+      // Add delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, baseDelayMs));
+    }
   }
 }
 
