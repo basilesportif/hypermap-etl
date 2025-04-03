@@ -58,14 +58,3 @@ export const HypermapEntrySchema = new Schema({
   timestamps: true
 });
 
-// Schema for indexing status
-export const IndexingStatusSchema = new Schema({
-  lastProcessedBlock: { type: Number, required: true },
-  indexingInProgress: { type: Boolean, default: false },
-  startTime: { type: Date },
-  endTime: { type: Date },
-  eventsProcessed: { type: Number, default: 0 },
-  errors: { type: [String], default: [] }
-}, {
-  timestamps: true
-});

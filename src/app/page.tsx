@@ -6,10 +6,9 @@ import { DEFAULT_START_BLOCK } from '../constants';
 interface IndexingStatus {
   lastProcessedBlock: number;
   indexingInProgress: boolean;
-  startTime?: string;
-  endTime?: string;
+  startTime: string | null;
+  endTime: string | null;
   eventsProcessed: number;
-  errors: string[];
 }
 
 export default function Home() {
@@ -139,16 +138,6 @@ export default function Home() {
                 </p>
               </div>
               
-              {status.errors.length > 0 && (
-                <div className="col-span-2">
-                  <p className="text-gray-500 dark:text-gray-400">Errors</p>
-                  <ul className="text-red-500 list-disc list-inside">
-                    {status.errors.map((error, index) => (
-                      <li key={index}>{error}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
           ) : (
             <p>No status available. Please start indexing.</p>

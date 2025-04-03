@@ -4,7 +4,7 @@ import {
   HypermapEvent, MintEvent, FactEvent, NoteEvent, 
   GeneEvent, TransferEvent, HypermapEntry 
 } from '../types';
-import { HypermapEntryModel, HypermapEventModel, IndexingStatusModel, initDatabase } from '../models';
+import { HypermapEntryModel, HypermapEventModel, initDatabase } from '../models';
 import { ROOT_HASH } from '../constants';
 
 if (!process.env.MONGODB_URI) {
@@ -230,37 +230,6 @@ async function processTransferEvent(event: TransferEvent): Promise<void> {
   );
 }
 
-// Get indexing status
-export async function getIndexingStatus() {
-  const status = await IndexingStatusModel.findOne().sort({ createdAt: -1 });
-  return status;
-}
-
-// Update indexing status
-export async function updateIndexingStatus(
-  lastProcessedBlock: number, 
-  indexingInProgress: boolean = false,
-  eventsProcessed: number = 0,
-  errors: string[] = []
-) {
-  const now = new Date();
-  const status = await IndexingStatusModel.findOneAndUpdate(
-    {},
-    {
-      $set: {
-        lastProcessedBlock,
-        indexingInProgress,
-        endTime: indexingInProgress ? undefined : now,
-        startTime: indexingInProgress && { $exists: false } ? now : undefined,
-        eventsProcessed,
-        errors
-      }
-    },
-    { sort: { createdAt: -1 }, new: true }
-  );
-  
-  return status;
-}
 
 // Build full names for entries based on their hierarchy
 export async function buildFullNames() {

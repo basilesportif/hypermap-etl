@@ -85,12 +85,3 @@ export interface HypermapEntry {
   lastUpdateBlock: number;
 }
 
-// Event Processor Status
-export interface IndexingStatus {
-  lastProcessedBlock: number;
-  indexingInProgress: boolean;
-  startTime?: Date;
-  endTime?: Date;
-  eventsProcessed: number;
-  errors: string[];
-}
