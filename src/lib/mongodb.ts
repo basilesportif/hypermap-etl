@@ -66,11 +66,24 @@ export async function storeEvents(events: HypermapEvent[]): Promise<void> {
   if (events.length === 0) return;
   
   try {
-    await HypermapEventModel.insertMany(events);
-    console.log(`Stored ${events.length} events in the database`);
+    // Insert events one by one to avoid failing the entire batch
+    let successCount = 0;
+    
+    for (const event of events) {
+      try {
+        await HypermapEventModel.create(event);
+        successCount++;
+      } catch (err) {
+        console.error('Error storing individual event:', err);
+        console.log('Event that failed:', JSON.stringify(event, null, 2));
+        // Continue with the next event
+      }
+    }
+    
+    console.log(`Stored ${successCount} out of ${events.length} events in the database`);
   } catch (error) {
-    console.error('Error storing events:', error);
-    throw error;
+    console.error('Error in storeEvents function:', error);
+    // Continue processing instead of throwing
   }
 }
 

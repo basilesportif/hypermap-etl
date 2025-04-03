@@ -110,13 +110,18 @@ export async function processEventsInChunks(
       
       // Call the callback with processed events
       if (validEvents.length > 0) {
-        await callback(validEvents);
+        try {
+          await callback(validEvents);
+        } catch (callbackError) {
+          console.error(`Error in callback for blocks ${currentFromBlock} to ${currentToBlock}:`, callbackError);
+          // Continue processing next chunk
+        }
       }
       
       console.log(`Processed ${validEvents.length} events in blocks ${currentFromBlock} to ${currentToBlock}`);
     } catch (error) {
       console.error(`Error processing blocks ${currentFromBlock} to ${currentToBlock}:`, error);
-      throw error;
+      // Continue with the next chunk instead of throwing
     }
     
     // Move to next chunk
@@ -134,12 +139,18 @@ async function processEvent(event: ethers.Log): Promise<HypermapEvent | null> {
     const block = await provider.getBlock(event.blockNumber);
     const timestamp = block ? Number(block.timestamp) : undefined;
     
+    // Log the event structure to debug
+    console.log('Event structure:', {
+      blockNumber: event.blockNumber, 
+      logIndex: event.index // ethers v6 uses index instead of logIndex
+    });
+    
     const baseEvent = {
       blockNumber: event.blockNumber,
       blockHash: event.blockHash,
       transactionHash: event.transactionHash,
       transactionIndex: event.transactionIndex,
-      logIndex: event.logIndex,
+      logIndex: event.index, // ethers v6 uses index instead of logIndex
       timestamp
     };
 
