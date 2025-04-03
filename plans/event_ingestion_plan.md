@@ -97,6 +97,7 @@ We'll be storing the following collections in MongoDB:
 
 2. **Dashboard UI**
    - Build a simple dashboard for monitoring indexing status
+   - Start indexing by default at the block in the .env file
    - Create visualizations for namespace hierarchy
    - do it like a file directory/explorer
       - show facts/notes differently
