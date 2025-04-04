@@ -307,9 +307,10 @@ async function indexEvents() {
   console.log(`Scanning ${blockCount.toLocaleString()} blocks`);
   
   // Define chunk size and rate limiting parameters
-  const CHUNK_SIZE = 5000;
+  const CHUNK_SIZE = 20000; // Larger chunks (20k blocks at a time)
+  const DEFAULT_DELAY = 1100; // Default delay of 1.1 seconds between chunks
   const MAX_RETRIES = 5;
-  const BASE_RETRY_DELAY = 3000; // 3 seconds
+  const BASE_RETRY_DELAY = 3000; // 3 seconds for exponential backoff
   
   // Run periodic status updates
   const statusInterval = setInterval(() => {
@@ -404,8 +405,9 @@ async function indexEvents() {
           }
         }
         
-        // Add a small delay between successful chunks to avoid overwhelming the RPC node
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Add the default delay between chunks to avoid overwhelming the RPC node
+        console.log(`  Waiting ${DEFAULT_DELAY}ms before next chunk...`);
+        await new Promise(resolve => setTimeout(resolve, DEFAULT_DELAY));
       }
     }
   } finally {
