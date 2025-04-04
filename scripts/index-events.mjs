@@ -275,8 +275,8 @@ async function indexEvents() {
   console.log(`Starting event indexing from block ${fromBlock} to ${toBlock}`);
   console.log(`Indexing events: ${eventTypes.join(', ')}`);
   console.log(`Contract address: ${CONTRACT_ADDRESS}`);
-  console.log(`MongoDB URI: ${process.env.MONGODB_URI.substring(0, 20)}...`);
-  console.log(`RPC URL: ${process.env.BASE_RPC_URL.substring(0, 20)}...`);
+  console.log(`MongoDB URI: ${process.env.MONGODB_URI}`);
+  console.log(`RPC URL: ${process.env.BASE_RPC_URL}`);
   console.log(`Print only mode: ${onlyPrint ? 'Yes' : 'No'}`);
   console.log('----------------------------------------');
   
@@ -294,6 +294,7 @@ async function indexEvents() {
   
   let eventCounts = {};
   let totalEvents = 0;
+  eventTypes.forEach(type => { eventCounts[type] = 0 });
   
   if (toBlock === 'latest') {
     const latestBlock = await provider.getBlockNumber();
@@ -305,69 +306,111 @@ async function indexEvents() {
   const blockCount = toBlock - fromBlock + 1;
   console.log(`Scanning ${blockCount.toLocaleString()} blocks`);
   
-  // Define chunk size based on block count
+  // Define chunk size and rate limiting parameters
   const CHUNK_SIZE = 5000;
+  const MAX_RETRIES = 5;
+  const BASE_RETRY_DELAY = 3000; // 3 seconds
   
-  // Process in chunks
-  for (let i = 0; i < eventTypes.length; i++) {
-    const eventType = eventTypes[i];
-    eventCounts[eventType] = 0;
-    
-    console.log(`\nIndexing ${eventType} events...`);
-    
-    // Process in chunks of blocks
-    for (let startBlock = fromBlock; startBlock <= toBlock; startBlock += CHUNK_SIZE) {
-      const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock);
+  // Run periodic status updates
+  const statusInterval = setInterval(() => {
+    console.log("\n------ CURRENT STATUS ------");
+    console.log(`Total events found so far: ${totalEvents}`);
+    Object.entries(eventCounts).forEach(([type, count]) => {
+      console.log(`  ${type}: ${count}`);
+    });
+    console.log("----------------------------\n");
+  }, 30000); // Print status every 30 seconds
+  
+  try {
+    // Process in chunks
+    for (let i = 0; i < eventTypes.length; i++) {
+      const eventType = eventTypes[i];
       
-      try {
-        console.log(`  Scanning blocks ${startBlock.toLocaleString()} to ${endBlock.toLocaleString()}...`);
+      console.log(`\nIndexing ${eventType} events...`);
+      console.log(`Current count: ${eventCounts[eventType]} events found so far`);
+      
+      // Process in chunks of blocks
+      for (let startBlock = fromBlock; startBlock <= toBlock; startBlock += CHUNK_SIZE) {
+        const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock);
+        let retryCount = 0;
+        let success = false;
         
-        const filter = contract.filters[eventType]();
-        const events = await contract.queryFilter(filter, startBlock, endBlock);
-        console.log(`  Found ${events.length} ${eventType} events in this chunk`);
-        
-        if (events.length === 0) continue;
-        
-        // Process events
-        const processedEvents = [];
-        
-        for (const event of events) {
-          const processedEvent = await processEvent(event);
-          if (processedEvent) {
-            totalEvents++;
-            eventCounts[eventType]++;
-            processedEvents.push(processedEvent);
+        while (!success && retryCount <= MAX_RETRIES) {
+          try {
+            console.log(`  Scanning blocks ${startBlock.toLocaleString()} to ${endBlock.toLocaleString()}...`);
             
-            // Print event details
-            if (processedEvent.eventType === 'Mint') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] MINT: parent=${formatHex(processedEvent.parenthash)} child=${formatHex(processedEvent.childhash)} label="${processedEvent.label}"`);
-            } else if (processedEvent.eventType === 'Fact') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] FACT: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
-            } else if (processedEvent.eventType === 'Note') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] NOTE: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
-            } else if (processedEvent.eventType === 'Gene') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] GENE: entry=${formatHex(processedEvent.entry)} gene=${formatHex(processedEvent.gene)}`);
-            } else if (processedEvent.eventType === 'Transfer') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] TRANSFER: from=${formatHex(processedEvent.from)} to=${formatHex(processedEvent.to)} id=${formatHex(processedEvent.id)}`);
-            } else if (processedEvent.eventType === 'Zero') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] ZERO: tba=${formatHex(processedEvent.zeroTba)}`);
-            } else if (processedEvent.eventType === 'Upgraded') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] UPGRADED: implementation=${formatHex(processedEvent.implementation)}`);
+            const filter = contract.filters[eventType]();
+            const events = await contract.queryFilter(filter, startBlock, endBlock);
+            console.log(`  Found ${events.length} ${eventType} events in this chunk`);
+            
+            if (events.length === 0) {
+              success = true;
+              continue;
+            }
+            
+            // Process events
+            const processedEvents = [];
+            
+            for (const event of events) {
+              const processedEvent = await processEvent(event);
+              if (processedEvent) {
+                totalEvents++;
+                eventCounts[eventType]++;
+                processedEvents.push(processedEvent);
+                
+                // Print event details
+                if (processedEvent.eventType === 'Mint') {
+                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] MINT #${eventCounts['Mint']}: parent=${formatHex(processedEvent.parenthash)} child=${formatHex(processedEvent.childhash)} label="${processedEvent.label}"`);
+                } else if (processedEvent.eventType === 'Fact') {
+                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] FACT #${eventCounts['Fact']}: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
+                } else if (processedEvent.eventType === 'Note') {
+                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] NOTE #${eventCounts['Note']}: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
+                } else if (processedEvent.eventType === 'Gene') {
+                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] GENE #${eventCounts['Gene']}: entry=${formatHex(processedEvent.entry)} gene=${formatHex(processedEvent.gene)}`);
+                } else if (processedEvent.eventType === 'Transfer') {
+                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] TRANSFER #${eventCounts['Transfer']}: from=${formatHex(processedEvent.from)} to=${formatHex(processedEvent.to)} id=${formatHex(processedEvent.id)}`);
+                } else if (processedEvent.eventType === 'Zero') {
+                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] ZERO #${eventCounts['Zero']}: tba=${formatHex(processedEvent.zeroTba)}`);
+                } else if (processedEvent.eventType === 'Upgraded') {
+                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] UPGRADED #${eventCounts['Upgraded']}: implementation=${formatHex(processedEvent.implementation)}`);
+                }
+              }
+            }
+            
+            // Store events in batches
+            if (processedEvents.length > 0) {
+              await storeEvents(processedEvents);
+            }
+            
+            console.log(`  Running total: ${eventCounts[eventType]} ${eventType} events so far`);
+            success = true;
+          } catch (error) {
+            const errorMessage = error.toString();
+            const isTooManyRequests = 
+              errorMessage.includes("Too Many Requests") || 
+              errorMessage.includes("rate limit") ||
+              (error.code === "BAD_DATA" && errorMessage.includes("missing response"));
+            
+            if (isTooManyRequests && retryCount < MAX_RETRIES) {
+              retryCount++;
+              const delay = BASE_RETRY_DELAY * Math.pow(2, retryCount) + Math.random() * 1000;
+              console.log(`  Rate limited. Waiting ${Math.round(delay/1000)} seconds before retry #${retryCount}...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              console.error(`  Error indexing ${eventType} events from block ${startBlock} to ${endBlock}:`, errorMessage);
+              // Move on after MAX_RETRIES
+              success = true;
             }
           }
         }
         
-        // Store events in batches
-        if (processedEvents.length > 0) {
-          await storeEvents(processedEvents);
-        }
-      } catch (error) {
-        console.error(`  Error indexing ${eventType} events from block ${startBlock} to ${endBlock}:`, error.message);
+        // Add a small delay between successful chunks to avoid overwhelming the RPC node
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
-      
-      // Add a small delay to avoid overwhelming the RPC node
-      await new Promise(resolve => setTimeout(resolve, 200));
     }
+  } finally {
+    // Make sure we clear the interval even if there's an error
+    clearInterval(statusInterval);
   }
   
   console.log('\n----------------------------------------');
