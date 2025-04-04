@@ -337,92 +337,99 @@ async function indexEvents() {
   }, 15000); // Print status more frequently (every 15 seconds)
   
   try {
-    // Process in chunks
-    for (let i = 0; i < eventTypes.length; i++) {
-      const eventType = eventTypes[i];
+    // Process in chunks of blocks
+    for (let startBlock = fromBlock; startBlock <= toBlock; startBlock += CHUNK_SIZE) {
+      const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock);
+      let retryCount = 0;
+      let success = false;
       
-      console.log(`\nIndexing ${eventType} events...`);
-      console.log(`Current count: ${eventCounts[eventType]} events found so far`);
+      console.log(`\nScanning blocks ${startBlock.toLocaleString()} to ${endBlock.toLocaleString()}...`);
       
-      // Process in chunks of blocks
-      for (let startBlock = fromBlock; startBlock <= toBlock; startBlock += CHUNK_SIZE) {
-        const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock);
-        let retryCount = 0;
-        let success = false;
-        
-        while (!success && retryCount <= MAX_RETRIES) {
-          try {
-            console.log(`  Scanning blocks ${startBlock.toLocaleString()} to ${endBlock.toLocaleString()}...`);
-            
+      while (!success && retryCount <= MAX_RETRIES) {
+        try {
+          // Scan for all event types at once
+          let totalChunkEvents = 0;
+          let allProcessedEvents = [];
+          
+          // Collect events by type
+          for (const eventType of eventTypes) {
             const filter = contract.filters[eventType]();
             const events = await contract.queryFilter(filter, startBlock, endBlock);
             console.log(`  Found ${events.length} ${eventType} events in this chunk`);
             
-            if (events.length === 0) {
-              success = true;
-              continue;
-            }
-            
             // Process events
-            const processedEvents = [];
-            
             for (const event of events) {
               const processedEvent = await processEvent(event);
               if (processedEvent) {
-                totalEvents++;
-                eventCounts[eventType]++;
-                processedEvents.push(processedEvent);
-                
-                // Print event details
-                if (processedEvent.eventType === 'Mint') {
-                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] MINT #${eventCounts['Mint']}: parent=${formatHex(processedEvent.parenthash)} child=${formatHex(processedEvent.childhash)} label="${processedEvent.label}"`);
-                } else if (processedEvent.eventType === 'Fact') {
-                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] FACT #${eventCounts['Fact']}: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
-                } else if (processedEvent.eventType === 'Note') {
-                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] NOTE #${eventCounts['Note']}: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
-                } else if (processedEvent.eventType === 'Gene') {
-                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] GENE #${eventCounts['Gene']}: entry=${formatHex(processedEvent.entry)} gene=${formatHex(processedEvent.gene)}`);
-                } else if (processedEvent.eventType === 'Transfer') {
-                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] TRANSFER #${eventCounts['Transfer']}: from=${formatHex(processedEvent.from)} to=${formatHex(processedEvent.to)} id=${formatHex(processedEvent.id)}`);
-                } else if (processedEvent.eventType === 'Zero') {
-                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] ZERO #${eventCounts['Zero']}: tba=${formatHex(processedEvent.zeroTba)}`);
-                } else if (processedEvent.eventType === 'Upgraded') {
-                  console.log(`[${formatTimestamp(processedEvent.timestamp)}] UPGRADED #${eventCounts['Upgraded']}: implementation=${formatHex(processedEvent.implementation)}`);
-                }
+                allProcessedEvents.push(processedEvent);
               }
             }
+          }
+          
+          // Process all events
+          for (const processedEvent of allProcessedEvents) {
+            const eventType = processedEvent.eventType;
+            totalEvents++;
+            totalChunkEvents++;
+            eventCounts[eventType]++;
             
-            // Store events in batches
-            if (processedEvents.length > 0) {
-              await storeEvents(processedEvents);
-            }
-            
-            console.log(`  Running total: ${eventCounts[eventType]} ${eventType} events so far`);
-            success = true;
-          } catch (error) {
-            const errorMessage = error.toString();
-            const isTooManyRequests = 
-              errorMessage.includes("Too Many Requests") || 
-              errorMessage.includes("rate limit") ||
-              (error.code === "BAD_DATA" && errorMessage.includes("missing response"));
-            
-            if (isTooManyRequests && retryCount < MAX_RETRIES) {
-              retryCount++;
-              const delay = BASE_RETRY_DELAY * Math.pow(2, retryCount) + Math.random() * 1000;
-              console.log(`  Rate limited. Waiting ${Math.round(delay/1000)} seconds before retry #${retryCount}...`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-              console.error(`  Error indexing ${eventType} events from block ${startBlock} to ${endBlock}:`, errorMessage);
-              // Move on after MAX_RETRIES
-              success = true;
+            // Print event details
+            if (eventType === 'Mint') {
+              console.log(`[${formatTimestamp(processedEvent.timestamp)}] MINT #${eventCounts['Mint']}: parent=${formatHex(processedEvent.parenthash)} child=${formatHex(processedEvent.childhash)} label="${processedEvent.label}"`);
+            } else if (eventType === 'Fact') {
+              console.log(`[${formatTimestamp(processedEvent.timestamp)}] FACT #${eventCounts['Fact']}: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
+            } else if (eventType === 'Note') {
+              console.log(`[${formatTimestamp(processedEvent.timestamp)}] NOTE #${eventCounts['Note']}: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
+            } else if (eventType === 'Gene') {
+              console.log(`[${formatTimestamp(processedEvent.timestamp)}] GENE #${eventCounts['Gene']}: entry=${formatHex(processedEvent.entry)} gene=${formatHex(processedEvent.gene)}`);
+            } else if (eventType === 'Transfer') {
+              console.log(`[${formatTimestamp(processedEvent.timestamp)}] TRANSFER #${eventCounts['Transfer']}: from=${formatHex(processedEvent.from)} to=${formatHex(processedEvent.to)} id=${formatHex(processedEvent.id)}`);
+            } else if (eventType === 'Zero') {
+              console.log(`[${formatTimestamp(processedEvent.timestamp)}] ZERO #${eventCounts['Zero']}: tba=${formatHex(processedEvent.zeroTba)}`);
+            } else if (eventType === 'Upgraded') {
+              console.log(`[${formatTimestamp(processedEvent.timestamp)}] UPGRADED #${eventCounts['Upgraded']}: implementation=${formatHex(processedEvent.implementation)}`);
             }
           }
+          
+          // Store events in database
+          if (allProcessedEvents.length > 0) {
+            await storeEvents(allProcessedEvents);
+          }
+          
+          // Summary for this chunk
+          console.log(`  Found ${totalChunkEvents} total events in this chunk`);
+          
+          // Print event counts by type for this chunk
+          for (const eventType of eventTypes) {
+            const typeCount = allProcessedEvents.filter(e => e.eventType === eventType).length;
+            console.log(`    ${eventType}: ${typeCount}`);
+          }
+          
+          console.log(`  Running total: ${totalEvents} events so far`);
+          success = true;
+        } catch (error) {
+          const errorMessage = error.toString();
+          const isTooManyRequests = 
+            errorMessage.includes("Too Many Requests") || 
+            errorMessage.includes("rate limit") ||
+            (error.code === "BAD_DATA" && errorMessage.includes("missing response"));
+          
+          if (isTooManyRequests && retryCount < MAX_RETRIES) {
+            retryCount++;
+            const delay = BASE_RETRY_DELAY * Math.pow(2, retryCount) + Math.random() * 1000;
+            console.log(`  Rate limited. Waiting ${Math.round(delay/1000)} seconds before retry #${retryCount}...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            console.error(`  Error scanning blocks ${startBlock} to ${endBlock}:`, errorMessage);
+            // Move on after MAX_RETRIES
+            success = true;
+          }
         }
-        
-        // Add the default delay between chunks to avoid overwhelming the RPC node
-        console.log(`  Waiting ${DEFAULT_DELAY}ms before next chunk...`);
-        await new Promise(resolve => setTimeout(resolve, DEFAULT_DELAY));
       }
+      
+      // Add the default delay between chunks to avoid overwhelming the RPC node
+      console.log(`  Waiting ${DEFAULT_DELAY}ms before next chunk...`);
+      await new Promise(resolve => setTimeout(resolve, DEFAULT_DELAY));
     }
   } finally {
     // Make sure we clear the interval even if there's an error
