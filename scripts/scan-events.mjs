@@ -49,7 +49,10 @@ const DEFAULT_START_BLOCK = 27270000; // First block of HyperMap deployment
 const args = process.argv.slice(2);
 let fromBlock = DEFAULT_START_BLOCK;
 let toBlock = 'latest';
-let eventTypes = ['Mint', 'Fact', 'Note', 'Gene', 'Transfer', 'Zero', 'Upgraded'];
+
+// Always scan for all event types
+const eventTypes = ['Mint', 'Fact', 'Note', 'Gene', 'Transfer', 'Zero', 'Upgraded'];
+console.log("Scanning for ALL event types regardless of command line arguments");
 
 // Parse arguments
 args.forEach(arg => {
@@ -58,8 +61,6 @@ args.forEach(arg => {
   } else if (arg.startsWith('--to=')) {
     const value = arg.split('=')[1];
     toBlock = value === 'latest' ? 'latest' : parseInt(value);
-  } else if (arg.startsWith('--events=')) {
-    eventTypes = arg.split('=')[1].split(',');
   }
 });
 
@@ -225,13 +226,26 @@ async function scanEvents() {
   
   // Run periodic status updates
   const statusInterval = setInterval(() => {
-    console.log("\n------ CURRENT STATUS ------");
+    console.log("\n============ CURRENT STATUS ============");
     console.log(`Total events found so far: ${totalEvents}`);
-    Object.entries(eventCounts).forEach(([type, count]) => {
-      console.log(`  ${type}: ${count}`);
+    console.log("Event counts by type:");
+    
+    // Get sorted event types (with Transfer first, then alphabetical)
+    const sortedTypes = Object.keys(eventCounts).sort((a, b) => {
+      if (a === 'Transfer') return -1;
+      if (b === 'Transfer') return 1;
+      return a.localeCompare(b);
     });
-    console.log("----------------------------\n");
-  }, 30000); // Print status every 30 seconds
+    
+    // Display counts in a clean format
+    sortedTypes.forEach(type => {
+      const count = eventCounts[type];
+      const percentage = totalEvents > 0 ? Math.round((count / totalEvents) * 100) : 0;
+      console.log(`  ${type.padEnd(10)}: ${count.toString().padStart(6)} (${percentage}%)`);
+    });
+    
+    console.log("=========================================\n");
+  }, 15000); // Print status more frequently (every 15 seconds)
   
   try {
     // Process in chunks
@@ -312,13 +326,33 @@ async function scanEvents() {
     clearInterval(statusInterval);
   }
   
-  console.log('\n----------------------------------------');
+  console.log('\n=============== FINAL RESULTS ===============');
   console.log('Scan completed!');
-  console.log('Final event counts:');
-  for (const [type, count] of Object.entries(eventCounts)) {
-    console.log(`  ${type}: ${count}`);
-  }
   console.log(`Total events: ${totalEvents}`);
+  console.log('Final event counts by type:');
+  
+  // Get sorted event types (with Transfer first, then alphabetical)
+  const sortedTypes = Object.keys(eventCounts).sort((a, b) => {
+    if (a === 'Transfer') return -1;
+    if (b === 'Transfer') return 1;
+    return a.localeCompare(b);
+  });
+  
+  // Calculate the maximum count for bar chart scaling
+  const maxCount = Math.max(...Object.values(eventCounts));
+  const barLength = 30; // Maximum bar length
+    
+  // Display counts in a clean format with bar chart
+  sortedTypes.forEach(type => {
+    const count = eventCounts[type];
+    const percentage = totalEvents > 0 ? Math.round((count / totalEvents) * 100) : 0;
+    const barSize = Math.round((count / maxCount) * barLength);
+    const bar = '█'.repeat(barSize);
+    
+    console.log(`  ${type.padEnd(10)}: ${count.toString().padStart(6)} (${percentage.toString().padStart(2)}%) ${bar}`);
+  });
+  
+  console.log('=============================================');
 }
 
 // Run the scanner
