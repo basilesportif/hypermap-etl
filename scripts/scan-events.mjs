@@ -123,8 +123,10 @@ async function processEvent(event) {
         eventType: 'Mint',
         parenthash: args[0],
         childhash: args[1],
+        // labelhash is now bytes and indexed
         labelhash: args[2],
-        label: args[3]
+        // label is now bytes instead of string
+        label: args[3] ? ethers.toUtf8String(args[3]) : ''
       };
       break;
     }
@@ -135,8 +137,10 @@ async function processEvent(event) {
         eventType: 'Fact',
         parenthash: args[0],
         facthash: args[1],
+        // labelhash is now bytes and indexed
         labelhash: args[2],
-        label: args[3],
+        // label is now bytes instead of string
+        label: args[3] ? ethers.toUtf8String(args[3]) : '',
         data: args[4]
       };
       break;
@@ -148,8 +152,10 @@ async function processEvent(event) {
         eventType: 'Note',
         parenthash: args[0],
         notehash: args[1],
+        // labelhash is now bytes and indexed
         labelhash: args[2],
-        label: args[3],
+        // label is now bytes instead of string
+        label: args[3] ? ethers.toUtf8String(args[3]) : '',
         data: args[4]
       };
       break;

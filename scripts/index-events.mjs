@@ -99,10 +99,10 @@ const HypermapEventSchema = new mongoose.Schema({
   facthash: { type: String, sparse: true },
   notehash: { type: String, sparse: true },
   
-  // Common fields
-  labelhash: { type: String, sparse: true },
-  label: { type: String, sparse: true, index: true },
-  data: { type: String, sparse: true },
+  // Common fields - updated for bytes types
+  labelhash: { type: String, sparse: true, index: true }, // Now bytes (indexed)
+  label: { type: String, sparse: true, index: true },     // Now bytes, converted to string
+  data: { type: String, sparse: true },                   // Still bytes
   
   // Gene event fields
   entry: { type: String, sparse: true, index: true },
@@ -176,8 +176,10 @@ async function processEvent(event) {
         eventType: 'Mint',
         parenthash: args[0],
         childhash: args[1],
+        // labelhash is now bytes and indexed
         labelhash: args[2],
-        label: args[3]
+        // label is now bytes instead of string
+        label: args[3] ? ethers.toUtf8String(args[3]) : ''
       };
       break;
     }
@@ -188,8 +190,10 @@ async function processEvent(event) {
         eventType: 'Fact',
         parenthash: args[0],
         facthash: args[1],
+        // labelhash is now bytes and indexed
         labelhash: args[2],
-        label: args[3],
+        // label is now bytes instead of string
+        label: args[3] ? ethers.toUtf8String(args[3]) : '',
         data: args[4]
       };
       break;
@@ -201,8 +205,10 @@ async function processEvent(event) {
         eventType: 'Note',
         parenthash: args[0],
         notehash: args[1],
+        // labelhash is now bytes and indexed
         labelhash: args[2],
-        label: args[3],
+        // label is now bytes instead of string
+        label: args[3] ? ethers.toUtf8String(args[3]) : '',
         data: args[4]
       };
       break;
