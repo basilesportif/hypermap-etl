@@ -308,8 +308,8 @@ async function indexEvents() {
   console.log(`Scanning ${blockCount.toLocaleString()} blocks`);
   
   // Define chunk size and rate limiting parameters
-  const CHUNK_SIZE = 20000; // Larger chunks (20k blocks at a time)
-  const DEFAULT_DELAY = 1100; // Default delay of 1.1 seconds between chunks
+  const CHUNK_SIZE = 5000; // Reduce to 5k blocks for fewer rate limits
+  const DEFAULT_DELAY = 2000; // Increase default delay to 2 seconds
   const MAX_RETRIES = 5;
   const BASE_RETRY_DELAY = 3000; // 3 seconds for exponential backoff
   
@@ -351,18 +351,46 @@ async function indexEvents() {
           let totalChunkEvents = 0;
           let allProcessedEvents = [];
           
-          // Collect events by type
-          for (const eventType of eventTypes) {
-            const filter = contract.filters[eventType]();
-            const events = await contract.queryFilter(filter, startBlock, endBlock);
-            console.log(`  Found ${events.length} ${eventType} events in this chunk`);
-            
-            // Process events
-            for (const event of events) {
-              const processedEvent = await processEvent(event);
-              if (processedEvent) {
-                allProcessedEvents.push(processedEvent);
+          // Define priority tiers for events
+          const priorityGroups = [
+            ['Transfer'], // First tier - most common events
+            ['Mint', 'Fact', 'Gene'], // Second tier
+            ['Note', 'Zero', 'Upgraded'] // Third tier
+          ];
+          
+          // Process each priority group with a delay between them
+          for (const group of priorityGroups) {
+            // Query for events in this priority group in parallel
+            const groupResults = await Promise.all(group.map(async (eventType) => {
+              try {
+                console.log(`    Querying for ${eventType} events...`);
+                const filter = contract.filters[eventType]();
+                const events = await contract.queryFilter(filter, startBlock, endBlock);
+                console.log(`    Found ${events.length} ${eventType} events`);
+                
+                // Process events
+                const processed = [];
+                for (const event of events) {
+                  const processedEvent = await processEvent(event);
+                  if (processedEvent) {
+                    processed.push(processedEvent);
+                  }
+                }
+                return processed;
+              } catch (groupError) {
+                console.error(`    Error querying ${eventType} events:`, groupError.message);
+                return []; // Return empty array on error
               }
+            }));
+            
+            // Flatten results and add to all events
+            for (const groupResult of groupResults) {
+              allProcessedEvents = allProcessedEvents.concat(groupResult);
+            }
+            
+            // Add a small delay between priority groups
+            if (group !== priorityGroups[priorityGroups.length - 1]) {
+              await new Promise(resolve => setTimeout(resolve, 500));
             }
           }
           
@@ -409,10 +437,21 @@ async function indexEvents() {
           success = true;
         } catch (error) {
           const errorMessage = error.toString();
+          // More focused rate limit detection
           const isTooManyRequests = 
             errorMessage.includes("Too Many Requests") || 
-            errorMessage.includes("rate limit") ||
-            (error.code === "BAD_DATA" && errorMessage.includes("missing response"));
+            errorMessage.includes("rate limit") || 
+            errorMessage.includes("429") ||
+            errorMessage.includes("exceeded") ||
+            (error.code === "SERVER_ERROR" && errorMessage.includes("limit"));
+          
+          // Show detailed error info for debugging
+          console.log(`\n===== ERROR DETAILS =====`);
+          console.log(`Error type: ${error.constructor.name}`);
+          console.log(`Error code: ${error.code || 'none'}`);
+          console.log(`Error message: ${errorMessage}`);
+          console.log(`Rate limit detected: ${isTooManyRequests}`);
+          console.log(`========================\n`);
           
           if (isTooManyRequests && retryCount < MAX_RETRIES) {
             retryCount++;
