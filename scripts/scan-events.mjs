@@ -79,20 +79,35 @@ async function getBlockTimestamp(blockNumber) {
 
 // Process a single event
 async function processEvent(event) {
-  // Skip events without a fragment (they're not from our contract's ABI)
-  if (!event.fragment) {
+  // Validate we have a fragment
+  if (!event || !event.fragment) {
+    console.warn(`Skipping event without fragment: ${JSON.stringify(event)}`);
     return null;
   }
   
+  // Get event name with fallback
   const eventName = event.fragment.name || '';
-  const timestamp = await getBlockTimestamp(event.blockNumber);
+  if (!eventName) {
+    console.warn(`Skipping event with empty name: ${JSON.stringify(event.fragment)}`);
+    return null;
+  }
   
+  // Get timestamp with fallback
+  let timestamp;
+  try {
+    timestamp = await getBlockTimestamp(event.blockNumber);
+  } catch (err) {
+    console.warn(`Error getting timestamp for block ${event.blockNumber}: ${err.message}`);
+    timestamp = null;
+  }
+  
+  // Create base event data
   const baseEvent = {
     blockNumber: event.blockNumber,
     blockHash: event.blockHash,
     transactionHash: event.transactionHash,
     transactionIndex: event.transactionIndex,
-    logIndex: event.index, // ethers v6 uses index instead of logIndex
+    logIndex: event.index || event.logIndex, // ethers v6 uses index, fallback to logIndex
     timestamp
   };
 
@@ -225,28 +240,16 @@ async function scanEvents() {
   const MAX_RETRIES = 5;
   const BASE_RETRY_DELAY = 3000; // 3 seconds for exponential backoff
   
-  // Run periodic status updates
+  // Run simple periodic status updates
   const statusInterval = setInterval(() => {
-    console.log("\n============ CURRENT STATUS ============");
-    console.log(`Total events found so far: ${totalEvents}`);
-    console.log("Event counts by type:");
-    
-    // Get sorted event types (with Transfer first, then alphabetical)
-    const sortedTypes = Object.keys(eventCounts).sort((a, b) => {
-      if (a === 'Transfer') return -1;
-      if (b === 'Transfer') return 1;
-      return a.localeCompare(b);
-    });
-    
-    // Display counts in a clean format
-    sortedTypes.forEach(type => {
-      const count = eventCounts[type];
-      const percentage = totalEvents > 0 ? Math.round((count / totalEvents) * 100) : 0;
-      console.log(`  ${type.padEnd(10)}: ${count.toString().padStart(6)} (${percentage}%)`);
-    });
-    
-    console.log("=========================================\n");
-  }, 15000); // Print status more frequently (every 15 seconds)
+    // Simple one-line status update
+    const blocksProcessed = Math.min(toBlock, lastProcessedBlock || fromBlock) - fromBlock;
+    const blockCompletion = blockCount > 0 ? Math.round((blocksProcessed / blockCount) * 100) : 0;
+    console.log(`STATUS: ${totalEvents} events found (${blockCompletion}% complete)`);
+  }, 15000); // Update every 15 seconds
+  
+  // Track the last processed block to calculate progress
+  let lastProcessedBlock = fromBlock;
   
   try {
     // Process in chunks of blocks
@@ -269,80 +272,85 @@ async function scanEvents() {
           try {
             console.log(`    Querying for ALL events from contract...`);
             
-            // Query without specific event filter to get ALL events
-            const events = await contract.queryFilter(null, startBlock, endBlock);
-            console.log(`    Found ${events.length} total events`);
+            // Create a proper filter for all events
+            const allEventsFilter = {
+              address: CONTRACT_ADDRESS
+            };
             
-            // Process and categorize events
-            const eventsByType = {};
-            eventTypes.forEach(type => { eventsByType[type] = 0 });
+            // Query with filter by contract address
+            const events = await provider.getLogs({
+              ...allEventsFilter,
+              fromBlock: startBlock,
+              toBlock: endBlock
+            });
+            console.log(`    Found ${events.length} total events`);
             
             let processedCount = 0;
             let skippedCount = 0;
             
+            // Parse events using contract interface (without excessive logging)
             for (const event of events) {
               try {
-                const processedEvent = await processEvent(event);
-                if (processedEvent) {
-                  allEventsInChunk.push(processedEvent);
-                  eventsByType[processedEvent.eventType] = (eventsByType[processedEvent.eventType] || 0) + 1;
-                  processedCount++;
+                const parsedLog = contract.interface.parseLog(event);
+                if (parsedLog) {
+                  const processedEvent = await processEvent({
+                    ...event,
+                    fragment: parsedLog.fragment,
+                    args: parsedLog.args
+                  });
+                  
+                  if (processedEvent) {
+                    allEventsInChunk.push(processedEvent);
+                    processedCount++;
+                  } else {
+                    skippedCount++;
+                  }
                 } else {
                   skippedCount++;
                 }
               } catch (eventError) {
-                console.error(`    Error processing event at block ${event.blockNumber}, tx ${event.transactionHash}: ${eventError.message}`);
+                // Simplified error handling - don't log details for every event
                 skippedCount++;
               }
             }
             
-            console.log(`    Successfully processed ${processedCount} events, skipped ${skippedCount} events`);
-            
-            
-            // Log counts by type
-            console.log(`    Events by type in this chunk:`);
-            for (const eventType of eventTypes) {
-              console.log(`      ${eventType}: ${eventsByType[eventType] || 0}`);
-            }
+            // Simple count summary
+            console.log(`    Matched ${processedCount}/${events.length} events (${skippedCount} skipped)`)
             
           } catch (queryError) {
             console.error(`    Error querying events:`, queryError.message);
           }
           
-          // Process all events (now sorted by type)
+          // Process all events without detailed logging
           for (const processedEvent of allEventsInChunk) {
             const eventType = processedEvent.eventType;
             totalEvents++;
             totalChunkEvents++;
             eventCounts[eventType]++;
             
-            // Format output based on event type
-            if (eventType === 'Mint') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] MINT #${eventCounts['Mint']}: parent=${formatHex(processedEvent.parenthash)} child=${formatHex(processedEvent.childhash)} label="${processedEvent.label}"`);
-            } else if (eventType === 'Fact') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] FACT #${eventCounts['Fact']}: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
-            } else if (eventType === 'Note') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] NOTE #${eventCounts['Note']}: parent=${formatHex(processedEvent.parenthash)} label="${processedEvent.label}" data="${processedEvent.data.substring(0, 30)}${processedEvent.data.length > 30 ? '...' : ''}"`);
-            } else if (eventType === 'Gene') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] GENE #${eventCounts['Gene']}: entry=${formatHex(processedEvent.entry)} gene=${formatHex(processedEvent.gene)}`);
-            } else if (eventType === 'Transfer') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] TRANSFER #${eventCounts['Transfer']}: from=${formatHex(processedEvent.from)} to=${formatHex(processedEvent.to)} id=${formatHex(processedEvent.id)}`);
-            } else if (eventType === 'Zero') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] ZERO #${eventCounts['Zero']}: tba=${formatHex(processedEvent.zeroTba)}`);
-            } else if (eventType === 'Upgraded') {
-              console.log(`[${formatTimestamp(processedEvent.timestamp)}] UPGRADED #${eventCounts['Upgraded']}: implementation=${formatHex(processedEvent.implementation)}`);
+            // Skip detailed event logging - too verbose
+          }
+          
+          // Update last processed block for progress tracking
+          lastProcessedBlock = endBlock;
+          
+          // Simple summary for this block range
+          console.log(`  BLOCKS ${startBlock.toLocaleString()}-${endBlock.toLocaleString()}: Found ${totalChunkEvents} events (total: ${totalEvents})`);
+          
+          // Show a condensed event type summary on one line if we have events
+          if (totalChunkEvents > 0) {
+            const typesSummary = eventTypes
+              .filter(type => allEventsInChunk.some(e => e.eventType === type))
+              .map(type => {
+                const count = allEventsInChunk.filter(e => e.eventType === type).length;
+                return `${type}:${count}`;
+              })
+              .join(', ');
+              
+            if (typesSummary) {
+              console.log(`  Types: ${typesSummary}`);
             }
           }
-          
-          // Summary for this chunk
-          console.log(`  Found ${totalChunkEvents} total events in this chunk`);
-          
-          // Print event counts by type for this chunk
-          for (const eventType of eventTypes) {
-            console.log(`    ${eventType}: ${allEventsInChunk.filter(e => e.eventType === eventType).length}`);
-          }
-          
-          console.log(`  Running total: ${totalEvents} events so far`);
           success = true;
         } catch (error) {
           const errorMessage = error.toString();
@@ -385,30 +393,23 @@ async function scanEvents() {
   }
   
   console.log('\n=============== FINAL RESULTS ===============');
-  console.log('Scan completed!');
-  console.log(`Total events: ${totalEvents}`);
-  console.log('Final event counts by type:');
+  console.log(`SCAN COMPLETE: Found ${totalEvents} total events`);
   
-  // Get sorted event types (with Transfer first, then alphabetical)
-  const sortedTypes = Object.keys(eventCounts).sort((a, b) => {
-    if (a === 'Transfer') return -1;
-    if (b === 'Transfer') return 1;
-    return a.localeCompare(b);
-  });
+  // Get event counts sorted by count (high to low)
+  const typeEntries = Object.entries(eventCounts)
+    .filter(([_, count]) => count > 0)  // Only show event types with non-zero counts
+    .sort((a, b) => b[1] - a[1]);       // Sort by count descending
   
-  // Calculate the maximum count for bar chart scaling
-  const maxCount = Math.max(...Object.values(eventCounts));
-  const barLength = 30; // Maximum bar length
-    
-  // Display counts in a clean format with bar chart
-  sortedTypes.forEach(type => {
-    const count = eventCounts[type];
-    const percentage = totalEvents > 0 ? Math.round((count / totalEvents) * 100) : 0;
-    const barSize = Math.round((count / maxCount) * barLength);
-    const bar = '█'.repeat(barSize);
-    
-    console.log(`  ${type.padEnd(10)}: ${count.toString().padStart(6)} (${percentage.toString().padStart(2)}%) ${bar}`);
-  });
+  if (typeEntries.length > 0) {
+    // Simple table of non-zero counts
+    console.log('Event counts:');
+    typeEntries.forEach(([type, count]) => {
+      const percentage = totalEvents > 0 ? Math.round((count / totalEvents) * 100) : 0;
+      console.log(`  ${type.padEnd(10)}: ${count} (${percentage}%)`);
+    });
+  } else {
+    console.log('No events found.');
+  }
   
   console.log('=============================================');
 }
