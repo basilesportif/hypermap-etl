@@ -264,47 +264,34 @@ async function scanEvents() {
           // Create an array to hold all events from all types
           let allEventsInChunk = [];
           
-          // Define priority tiers - start with just Transfer events
-          const priorityGroups = [
-            ['Transfer'], // First tier - most common events
-            ['Mint', 'Fact', 'Gene'], // Second tier
-            ['Note', 'Zero', 'Upgraded'] // Third tier
-          ];
-          
-          // Process each priority group with a delay between them
-          for (const group of priorityGroups) {
-            // Query for events in this priority group in parallel
-            const groupResults = await Promise.all(group.map(async (eventType) => {
-              try {
-                console.log(`    Querying for ${eventType} events...`);
-                const filter = contract.filters[eventType]();
-                const events = await contract.queryFilter(filter, startBlock, endBlock);
-                console.log(`    Found ${events.length} ${eventType} events`);
-                
-                // Process events
-                const processed = [];
-                for (const event of events) {
-                  const processedEvent = await processEvent(event);
-                  if (processedEvent) {
-                    processed.push(processedEvent);
-                  }
-                }
-                return processed;
-              } catch (groupError) {
-                console.error(`    Error querying ${eventType} events:`, groupError.message);
-                return []; // Return empty array on error
+          // Make a single query for all events from our contract in this block range
+          try {
+            console.log(`    Querying for ALL events from contract...`);
+            
+            // Query without specific event filter to get ALL events
+            const events = await contract.queryFilter({}, startBlock, endBlock);
+            console.log(`    Found ${events.length} total events`);
+            
+            // Process and categorize events
+            const eventsByType = {};
+            eventTypes.forEach(type => { eventsByType[type] = 0 });
+            
+            for (const event of events) {
+              const processedEvent = await processEvent(event);
+              if (processedEvent) {
+                allEventsInChunk.push(processedEvent);
+                eventsByType[processedEvent.eventType] = (eventsByType[processedEvent.eventType] || 0) + 1;
               }
-            }));
-            
-            // Flatten results and add to all events
-            for (const groupResult of groupResults) {
-              allEventsInChunk = allEventsInChunk.concat(groupResult);
             }
             
-            // Add a small delay between priority groups
-            if (group !== priorityGroups[priorityGroups.length - 1]) {
-              await new Promise(resolve => setTimeout(resolve, 500));
+            // Log counts by type
+            console.log(`    Events by type in this chunk:`);
+            for (const eventType of eventTypes) {
+              console.log(`      ${eventType}: ${eventsByType[eventType] || 0}`);
             }
+            
+          } catch (queryError) {
+            console.error(`    Error querying events:`, queryError.message);
           }
           
           // Process all events (now sorted by type)
