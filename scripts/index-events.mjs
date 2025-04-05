@@ -356,7 +356,7 @@ async function indexEvents() {
             console.log(`    Querying for ALL events from contract...`);
             
             // Query without specific event filter to get ALL events
-            const events = await contract.queryFilter({}, startBlock, endBlock);
+            const events = await contract.queryFilter(null, startBlock, endBlock);
             console.log(`    Found ${events.length} total events`);
             
             // Process and categorize events
