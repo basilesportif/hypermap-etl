@@ -79,7 +79,12 @@ async function getBlockTimestamp(blockNumber) {
 
 // Process a single event
 async function processEvent(event) {
-  const eventName = event.fragment?.name || '';
+  // Skip events without a fragment (they're not from our contract's ABI)
+  if (!event.fragment) {
+    return null;
+  }
+  
+  const eventName = event.fragment.name || '';
   const timestamp = await getBlockTimestamp(event.blockNumber);
   
   const baseEvent = {
@@ -93,9 +98,11 @@ async function processEvent(event) {
 
   let eventData;
   
+  // Safely get arguments with fallbacks
+  const args = event.args || [];
+  
   switch(eventName) {
     case 'Mint': {
-      const args = event.args;
       eventData = {
         ...baseEvent,
         eventType: 'Mint',
@@ -108,7 +115,6 @@ async function processEvent(event) {
     }
     
     case 'Fact': {
-      const args = event.args;
       eventData = {
         ...baseEvent,
         eventType: 'Fact',
@@ -122,7 +128,6 @@ async function processEvent(event) {
     }
     
     case 'Note': {
-      const args = event.args;
       eventData = {
         ...baseEvent,
         eventType: 'Note',
@@ -136,7 +141,6 @@ async function processEvent(event) {
     }
     
     case 'Gene': {
-      const args = event.args;
       eventData = {
         ...baseEvent,
         eventType: 'Gene',
@@ -147,19 +151,17 @@ async function processEvent(event) {
     }
     
     case 'Transfer': {
-      const args = event.args;
       eventData = {
         ...baseEvent,
         eventType: 'Transfer',
         from: args[0],
         to: args[1],
-        id: args[2].toString()
+        id: args[2] ? args[2].toString() : null
       };
       break;
     }
     
     case 'Zero': {
-      const args = event.args;
       eventData = {
         ...baseEvent,
         eventType: 'Zero',
@@ -169,7 +171,6 @@ async function processEvent(event) {
     }
     
     case 'Upgraded': {
-      const args = event.args;
       eventData = {
         ...baseEvent,
         eventType: 'Upgraded',
@@ -276,13 +277,27 @@ async function scanEvents() {
             const eventsByType = {};
             eventTypes.forEach(type => { eventsByType[type] = 0 });
             
+            let processedCount = 0;
+            let skippedCount = 0;
+            
             for (const event of events) {
-              const processedEvent = await processEvent(event);
-              if (processedEvent) {
-                allEventsInChunk.push(processedEvent);
-                eventsByType[processedEvent.eventType] = (eventsByType[processedEvent.eventType] || 0) + 1;
+              try {
+                const processedEvent = await processEvent(event);
+                if (processedEvent) {
+                  allEventsInChunk.push(processedEvent);
+                  eventsByType[processedEvent.eventType] = (eventsByType[processedEvent.eventType] || 0) + 1;
+                  processedCount++;
+                } else {
+                  skippedCount++;
+                }
+              } catch (eventError) {
+                console.error(`    Error processing event at block ${event.blockNumber}, tx ${event.transactionHash}: ${eventError.message}`);
+                skippedCount++;
               }
             }
+            
+            console.log(`    Successfully processed ${processedCount} events, skipped ${skippedCount} events`);
+            
             
             // Log counts by type
             console.log(`    Events by type in this chunk:`);
