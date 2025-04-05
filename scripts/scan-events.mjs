@@ -270,25 +270,18 @@ async function scanEvents() {
           
           // Make a single query for all events from our contract in this block range
           try {
-            console.log(`    Querying for ALL events from contract...`);
-            
-            // Create a proper filter for all events
-            const allEventsFilter = {
-              address: CONTRACT_ADDRESS
-            };
-            
-            // Query with filter by contract address
+            // Query with filter by contract address (without logging)
+            const allEventsFilter = { address: CONTRACT_ADDRESS };
             const events = await provider.getLogs({
               ...allEventsFilter,
               fromBlock: startBlock,
               toBlock: endBlock
             });
-            console.log(`    Found ${events.length} total events`);
             
             let processedCount = 0;
             let skippedCount = 0;
             
-            // Parse events using contract interface (without excessive logging)
+            // Parse events using contract interface (without logging)
             for (const event of events) {
               try {
                 const parsedLog = contract.interface.parseLog(event);
@@ -309,13 +302,10 @@ async function scanEvents() {
                   skippedCount++;
                 }
               } catch (eventError) {
-                // Simplified error handling - don't log details for every event
+                // Silent error handling
                 skippedCount++;
               }
             }
-            
-            // Simple count summary
-            console.log(`    Matched ${processedCount}/${events.length} events (${skippedCount} skipped)`)
             
           } catch (queryError) {
             console.error(`    Error querying events:`, queryError.message);
@@ -334,23 +324,38 @@ async function scanEvents() {
           // Update last processed block for progress tracking
           lastProcessedBlock = endBlock;
           
-          // Simple summary for this block range
-          console.log(`  BLOCKS ${startBlock.toLocaleString()}-${endBlock.toLocaleString()}: Found ${totalChunkEvents} events (total: ${totalEvents})`);
+          // Block range header
+          console.log(`\n=== BLOCKS ${startBlock.toLocaleString()}-${endBlock.toLocaleString()} ===`);
+          console.log(`Found ${totalChunkEvents} new events (total: ${totalEvents})`);
           
-          // Show a condensed event type summary on one line if we have events
-          if (totalChunkEvents > 0) {
-            const typesSummary = eventTypes
-              .filter(type => allEventsInChunk.some(e => e.eventType === type))
-              .map(type => {
-                const count = allEventsInChunk.filter(e => e.eventType === type).length;
-                return `${type}:${count}`;
-              })
-              .join(', ');
-              
-            if (typesSummary) {
-              console.log(`  Types: ${typesSummary}`);
-            }
+          // Calculate new events by type in this chunk
+          const chunkCounts = {};
+          eventTypes.forEach(type => {
+            chunkCounts[type] = allEventsInChunk.filter(e => e.eventType === type).length;
+          });
+          
+          // Display vertical table of ALL event types (running totals)
+          console.log("\nEVENT TYPE SUMMARY:");
+          console.log("╔════════════╦════════════╦════════════╗");
+          console.log("║ EVENT TYPE ║ THIS CHUNK ║ TOTAL      ║");
+          console.log("╠════════════╬════════════╬════════════╣");
+          
+          // Sort event types by total count (descending)
+          const sortedTypes = eventTypes.sort((a, b) => eventCounts[b] - eventCounts[a]);
+          
+          for (const type of sortedTypes) {
+            const chunkCount = chunkCounts[type] || 0;
+            const totalTypeCount = eventCounts[type] || 0;
+            const typePercent = totalEvents > 0 ? Math.round((totalTypeCount / totalEvents) * 100) : 0;
+            
+            const paddedType = type.padEnd(10);
+            const paddedChunk = `${chunkCount}`.padStart(6);
+            const paddedTotal = `${totalTypeCount} (${typePercent}%)`.padStart(10);
+            
+            console.log(`║ ${paddedType} ║ ${paddedChunk} ║ ${paddedTotal} ║`);
           }
+          
+          console.log("╚════════════╩════════════╩════════════╝");
           success = true;
         } catch (error) {
           const errorMessage = error.toString();
@@ -383,8 +388,7 @@ async function scanEvents() {
         }
       }
       
-      // Add the default delay between chunks to avoid overwhelming the RPC node
-      console.log(`  Waiting ${DEFAULT_DELAY}ms before next chunk...`);
+      // Add the default delay between chunks to avoid overwhelming the RPC node (silently)
       await new Promise(resolve => setTimeout(resolve, DEFAULT_DELAY));
     }
   } finally {
