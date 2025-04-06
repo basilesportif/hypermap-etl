@@ -59,10 +59,7 @@ async function checkStatus() {
     const { HypermapEventModel, HypermapEntryModel } = 
       await import('../src/models/index.js');
     
-    // 1. Count total entries
-    const totalEntries = await HypermapEntryModel.countDocuments();
-    console.log(`\n=== ENTRIES SUMMARY ===`);
-    console.log(`Total entries: ${totalEntries.toLocaleString()}`);
+    // Skip entries section entirely for now as the collection doesn't exist yet
     
     // 2. Count events by type
     const eventTypes = ['Mint', 'Fact', 'Note', 'Gene', 'Transfer', 'Zero', 'Upgraded'];
