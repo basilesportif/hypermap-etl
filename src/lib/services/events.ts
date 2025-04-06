@@ -6,27 +6,36 @@
  */
 
 import { ethers } from 'ethers';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { 
   HypermapEvent, MintEvent, FactEvent, NoteEvent, 
   GeneEvent, TransferEvent, ZeroEvent, UpgradedEvent,
   Bytes, Bytes32, Address
 } from '../../types/index.js';
 
+// Load ABI directly (dynamic import with assert doesn't work consistently in all environments)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const abiPath = path.resolve(__dirname, '../../abi/hypermap.abi.json');
+const HYPERMAP_ABI = JSON.parse(fs.readFileSync(abiPath, 'utf8'));
+
 // Contract address
 export const CONTRACT_ADDRESS = '0x000000000044C6B8Cb4d8f0F889a3E47664EAeda';
 
 /**
- * Create a provider and contract instance
+ * Create a provider instance
  */
 export function createProvider(rpcUrl: string): ethers.JsonRpcProvider {
   return new ethers.JsonRpcProvider(rpcUrl);
 }
 
 /**
- * Create a contract instance from a provider and ABI
+ * Create a contract instance using the built-in HyperMap ABI
  */
-export function createContract(provider: ethers.JsonRpcProvider, abi: any): ethers.Contract {
-  return new ethers.Contract(CONTRACT_ADDRESS, abi, provider);
+export function createContract(provider: ethers.JsonRpcProvider): ethers.Contract {
+  return new ethers.Contract(CONTRACT_ADDRESS, HYPERMAP_ABI, provider);
 }
 
 /**

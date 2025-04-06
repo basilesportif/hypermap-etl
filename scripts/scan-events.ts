@@ -79,13 +79,9 @@ args.forEach(arg => {
   // Continuous mode flags are handled directly in the scanEvents function
 });
 
-// Load ABI from file
-const hypermapAbiPath = path.resolve(rootDir, 'src/abi/hypermap.abi.json');
-const hypermapAbi = JSON.parse(fs.readFileSync(hypermapAbiPath, 'utf8'));
-
 // Setup provider and contract
 const provider = createProvider(process.env.BASE_RPC_URL as string);
-const contract = createContract(provider, hypermapAbi);
+const contract = createContract(provider);
 
 // Main scanner function
 async function scanEvents() {
