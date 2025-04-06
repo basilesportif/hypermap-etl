@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { DEFAULT_START_BLOCK } from '../constants';
 
 interface IndexingStatus {
@@ -103,7 +104,12 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen flex-col items-center p-8">
-      <h1 className="text-4xl font-bold mb-8">HyperMap ETL Dashboard</h1>
+      <h1 className="text-4xl font-bold mb-4">HyperMap ETL</h1>
+      <div className="mb-8 text-center">
+        <Link href="/dashboard" className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md font-medium">
+          View Status Dashboard
+        </Link>
+      </div>
       
       <div className="w-full max-w-4xl">
         {/* Indexing Status Section */}
@@ -238,9 +244,9 @@ export default function Home() {
           )}
           
           <div className="mt-4 text-center">
-            <a href="/explorer" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+            <Link href="/explorer" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
               Open Full Explorer →
-            </a>
+            </Link>
           </div>
         </section>
       </div>
