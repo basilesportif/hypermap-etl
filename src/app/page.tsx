@@ -186,11 +186,11 @@ export default function Home() {
   
   return (
     <main className="min-h-screen p-6 bg-gray-50">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">HyperMap ETL Dashboard</h1>
+      <div className="w-full mx-auto">
+        <h1 className="text-3xl font-bold mb-8 text-center">HyperMap ETL Dashboard</h1>
         
         {/* Three-column layout for wider screens, stacking on smaller screens */}
-        <div className="grid lg:grid-cols-3 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
           {/* Database Status Card */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Database Status</h2>
