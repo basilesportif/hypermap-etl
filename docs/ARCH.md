@@ -51,8 +51,8 @@ Database interactions are centralized in `src/lib/services/mongodb.ts`, which pr
 The scripts in the `scripts/` directory are thin wrappers around the core services,
 providing command-line interfaces for common operations:
 
-- `scan-events.mjs`: Scan and display events without storing them
-- `index-events.mjs`: Scan and store events in the database
+- `scan-events.ts`: Scan and display events without storing them
+- `index-events.ts`: Scan and store events in the database
 
 ### API Routes
 
@@ -78,6 +78,15 @@ The `src/types/` directory contains TypeScript interfaces for all data structure
 - Event types (Mint, Fact, Note, etc.)
 - Entry data structures
 - API request/response types
+
+### TypeScript Configuration
+
+The project uses TypeScript with ES modules (ESM) throughout:
+
+- The `tsconfig.json` file is configured with `"module": "NodeNext"` and `"moduleResolution": "NodeNext"`
+- ESM imports in TypeScript files must include the `.js` extension, even when importing `.ts` files
+- The ts-node loader is used to run TypeScript scripts directly (`node --loader ts-node/esm`)
+- The package.json has `"type": "module"` to specify ESM as the default module system
 
 ## Data Flow
 

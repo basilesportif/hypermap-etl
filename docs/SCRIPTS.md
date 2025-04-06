@@ -4,7 +4,7 @@ This document provides an overview of the utility scripts available in the Hyper
 
 ## Event Scanner Scripts
 
-### scan-events.mjs
+### scan-events.ts
 
 The event scanner processes blockchain events from the HyperMap contract on Base.
 
@@ -35,7 +35,7 @@ npm run scan-events -- --from=28000000
 npm run scan-events -- --from=28000000 --continuous
 ```
 
-### index-events.mjs
+### index-events.ts
 
 The event indexer processes blockchain events and stores them in MongoDB.
 
