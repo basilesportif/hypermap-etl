@@ -13,7 +13,7 @@ import {
   HypermapEvent, MintEvent, FactEvent, NoteEvent, 
   GeneEvent, TransferEvent, ZeroEvent, UpgradedEvent,
   Bytes, Bytes32, Address
-} from '../../types/index.js';
+} from '../../types';
 
 // Load ABI directly (dynamic import with assert doesn't work consistently in all environments)
 const __filename = fileURLToPath(import.meta.url);
