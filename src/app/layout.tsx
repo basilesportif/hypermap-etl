@@ -23,7 +23,6 @@ export default function RootLayout({
             <div className="font-bold text-xl">HyperMap ETL</div>
             <div className="space-x-4">
               <Link href="/" className="hover:text-gray-300">Home</Link>
-              <Link href="/dashboard" className="hover:text-gray-300">Dashboard</Link>
               <Link href="/explorer" className="hover:text-gray-300">Explorer</Link>
             </div>
           </div>
