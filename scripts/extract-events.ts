@@ -13,7 +13,7 @@
 
 // Import libraries
 import { ethers } from 'ethers';
-import mongoose from 'mongoose';
+import { MongoClient } from 'mongodb';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,16 +21,9 @@ import {
   createProvider,
   createContract,
   parseLogsToEvents,
-  formatTimestamp,
-  formatHex,
   CONTRACT_ADDRESS
 } from '../src/lib/services/events.js';
 import { HypermapEvent } from '../src/types/index.js';
-
-// Fix for null prototype errors with Mongoose
-(mongoose.Types.ObjectId as any).prototype[Symbol.for('nodejs.util.inspect.custom')] = function() {
-  return `new ObjectId("${this}")`;
-};
 
 // Get current directory
 const __filename = fileURLToPath(import.meta.url);
@@ -92,76 +85,14 @@ args.forEach(arg => {
 const provider = createProvider(process.env.BASE_RPC_URL as string);
 const contract = createContract(provider);
 
-// Modified schema to use event-specific ID as _id
-const HypermapEventSchema = new mongoose.Schema({
-  // Base event fields
-  eventType: { type: String, required: true, index: true, enum: ['Mint', 'Fact', 'Note', 'Gene', 'Transfer', 'Zero', 'Upgraded'] },
-  blockNumber: { type: Number, required: true, index: true },
-  blockHash: { type: String, required: true }, // Bytes32
-  transactionHash: { type: String, required: true, index: true }, // Bytes32
-  transactionIndex: { type: Number, required: true },
-  logIndex: { type: Number, required: true },
-  timestamp: { type: Number }, // Optional
-  
-  // Mint event fields - bytes32 (indexed)
-  parenthash: { type: String, sparse: true, index: true }, // Bytes32
-  childhash: { type: String, sparse: true, index: true },  // Bytes32
-  
-  // Fact/Note event fields - bytes32 (indexed)
-  facthash: { type: String, sparse: true, index: true },  // Bytes32
-  notehash: { type: String, sparse: true, index: true },  // Bytes32
-  
-  // Common fields for various events
-  labelhash: { type: String, sparse: true, index: true }, // Bytes (indexed) - hex string of raw bytes
-  label: { type: String, sparse: true, index: true },     // String - UTF8 decoded from bytes
-  data: { type: String, sparse: true },                   // Bytes - hex string of raw bytes
-  
-  // Gene event fields
-  entry: { type: String, sparse: true, index: true },     // Bytes32 (indexed)
-  gene: { type: String, sparse: true, index: true },      // Address (indexed)
-  
-  // Transfer event fields
-  from: { type: String, sparse: true, index: true },      // Address (indexed)
-  to: { type: String, sparse: true, index: true },        // Address (indexed)
-  id: { type: String, sparse: true, index: true },        // uint256 (indexed) as string
-  
-  // Zero event fields
-  zeroTba: { type: String, sparse: true, index: true },   // Address (indexed)
-  
-  // Upgraded event fields
-  implementation: { type: String, sparse: true, index: true } // Address (indexed)
-}, { 
-  timestamps: true,
-  _id: false // Disable automatic _id
-});
-
-// Create or retrieve the model with _id coming from event data
-// Check if model exists first to avoid model overwrite issues
-let HypermapEventModel;
-try {
-  // Try to get existing model first
-  HypermapEventModel = mongoose.model('HypermapEvent');
-  console.log('Using existing HypermapEvent model');
-  
-  // Don't attempt to override the schema - can cause null prototype errors
-  // Instead use the existing model as is
-  console.log('Using existing HypermapEvent model without recompilation');
-} catch (error) {
-  // Model doesn't exist yet, create it
-  HypermapEventModel = mongoose.model<HypermapEvent & mongoose.Document>(
-    'HypermapEvent', 
-    HypermapEventSchema
-  );
-  console.log('Created new HypermapEvent model');
-}
-
 // Generate a unique ID for each event based on its properties
 function generateEventId(event: HypermapEvent): string {
   return `${event.transactionHash}_${event.logIndex}`;
 }
 
 // Store events in MongoDB with _id as the event-specific ID
-async function storeEvents(events: HypermapEvent[]): Promise<void> {
+// Using native MongoDB driver to avoid Mongoose issues
+async function storeEvents(events: HypermapEvent[], collection: any): Promise<void> {
   if (!events.length) return;
   
   try {
@@ -174,53 +105,26 @@ async function storeEvents(events: HypermapEvent[]): Promise<void> {
       return eventWithId;
     });
     
-    // Insert events with upsert strategy
+    // Use bulkWrite with updateOne operations (upsert)
     const operations = eventsWithId.map(event => ({
       updateOne: {
         filter: { _id: event._id },
-        update: event,
+        update: { $set: event },
         upsert: true
       }
     }));
 
-    console.log('Executing MongoDB bulkWrite with upsert operations...');
+    console.log(`Preparing to store ${operations.length} events...`);
     
     // Log the first operation for debugging
     if (operations.length > 0) {
       console.log('Sample operation:', JSON.stringify(operations[0]).substring(0, 200) + '...');
     }
     
-    const result = await HypermapEventModel.bulkWrite(operations, { ordered: false });
+    const result = await collection.bulkWrite(operations, { ordered: false });
     
     console.log(`MongoDB result: ${JSON.stringify(result)}`);
     console.log(`Stored ${result.upsertedCount} new events, updated ${result.modifiedCount} existing events`);
-    
-    // Try direct insert if bulk operation didn't work
-    if (result.upsertedCount === 0 && result.modifiedCount === 0) {
-      console.log('Warning: No events were stored. Trying direct inserts as fallback...');
-      
-      // Try direct insert of each record individually
-      if (eventsWithId.length > 0) {
-        console.log(`Attempting direct insert of ${eventsWithId.length} records one by one...`);
-        let successCount = 0;
-        
-        for (const event of eventsWithId) {
-          try {
-            // Use insertOne instead of create to avoid schema issues
-            await mongoose.connection.db.collection('hypermapevents').updateOne(
-              { _id: event._id },
-              { $set: event },
-              { upsert: true }
-            );
-            successCount++;
-          } catch (err) {
-            console.error(`Failed to insert event ${event._id}:`, err);
-          }
-        }
-        
-        console.log(`Direct insert completed: ${successCount}/${eventsWithId.length} successful`);
-      }
-    }
   } catch (error: any) {
     // Handle duplicate key errors
     if (error.code === 11000) {
@@ -240,18 +144,30 @@ async function extractEvents() {
   console.log(`RPC URL: ${process.env.BASE_RPC_URL}`);
   console.log('----------------------------------------');
   
-  // Connect to MongoDB
+  // Connect to MongoDB using native driver
+  let client: MongoClient | null = null;
+  let db: any = null;
+  let collection: any = null;
+  
   try {
     console.log(`Connecting to MongoDB at ${process.env.MONGODB_URI}`);
-    await mongoose.connect(process.env.MONGODB_URI as string, {
-      // Add connection options to ensure we're using the latest Mongoose features
-      autoCreate: true, // Automatically create collections
-    });
+    client = new MongoClient(process.env.MONGODB_URI as string);
+    await client.connect();
     console.log('Connected to MongoDB successfully');
     
-    // Test database connection by checking collections
-    const collections = await mongoose.connection.db.listCollections().toArray();
-    console.log(`Available collections: ${collections.map(c => c.name).join(', ')}`);
+    db = client.db(); // Get default database from connection string
+    
+    // Ensure the collection exists and has indexes
+    collection = db.collection('hypermapevents');
+    
+    // Ensure indexes for efficient querying
+    await collection.createIndex({ eventType: 1 });
+    await collection.createIndex({ blockNumber: 1 });
+    await collection.createIndex({ transactionHash: 1 });
+    
+    // Test connection by checking collections
+    const collections = await db.listCollections().toArray();
+    console.log(`Available collections: ${collections.map((c: any) => c.name).join(', ')}`);
   } catch (error) {
     console.error('Error connecting to MongoDB:', error);
     process.exit(1);
@@ -331,7 +247,7 @@ async function extractEvents() {
           // Store events in database
           if (allProcessedEvents.length > 0) {
             console.log(`Storing ${allProcessedEvents.length} events in database...`);
-            await storeEvents(allProcessedEvents);
+            await storeEvents(allProcessedEvents, collection);
           } else {
             console.log('No events to store in this chunk');
           }
@@ -409,6 +325,12 @@ async function extractEvents() {
   } finally {
     // Make sure we clear the interval even if there's an error
     clearInterval(statusInterval);
+    
+    // Close MongoDB connection
+    if (client) {
+      await client.close();
+      console.log('Disconnected from MongoDB');
+    }
   }
   
   console.log('\n=============== FINAL RESULTS ===============');
@@ -431,10 +353,6 @@ async function extractEvents() {
   }
   
   console.log('=============================================');
-  
-  // Disconnect from MongoDB
-  await mongoose.disconnect();
-  console.log('Disconnected from MongoDB');
 }
 
 // Run the extractor
