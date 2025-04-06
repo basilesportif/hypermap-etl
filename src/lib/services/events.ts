@@ -10,7 +10,7 @@ import {
   HypermapEvent, MintEvent, FactEvent, NoteEvent, 
   GeneEvent, TransferEvent, ZeroEvent, UpgradedEvent,
   Bytes, Bytes32, Address
-} from '../../types';
+} from '../../types/index.js';
 
 // Contract address
 export const CONTRACT_ADDRESS = '0x000000000044C6B8Cb4d8f0F889a3E47664EAeda';

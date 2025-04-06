@@ -8,8 +8,8 @@
 import { MongoClient, Db } from 'mongodb';
 import mongoose from 'mongoose';
 import { HypermapEvent, MintEvent, FactEvent, NoteEvent, 
-         GeneEvent, TransferEvent, HypermapEntry } from '../../types';
-import { ROOT_HASH } from '../../constants';
+         GeneEvent, TransferEvent, HypermapEntry } from '../../types/index.js';
+import { ROOT_HASH } from '../../constants.js';
 
 // MongoDB Model types (will be imported from models)
 let HypermapEventModel: any;
@@ -29,7 +29,7 @@ export async function initMongoConnection(uri: string): Promise<void> {
     
     // Import models after connection to avoid model overwrite issues
     const { HypermapEventModel: EventModel, HypermapEntryModel: EntryModel } = 
-      await import('../../models');
+      await import('../../models/index.js');
     
     HypermapEventModel = EventModel;
     HypermapEntryModel = EntryModel;

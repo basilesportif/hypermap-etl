@@ -15,9 +15,17 @@
 
 // Import libraries
 import { ethers } from 'ethers';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import {
+  createProvider,
+  createContract,
+  parseLogsToEvents,
+  formatTimestamp,
+  formatHex,
+  CONTRACT_ADDRESS
+} from '../src/lib/services/events.js';
 
 // Get current directory
 const __filename = fileURLToPath(import.meta.url);
@@ -54,7 +62,7 @@ const DEFAULT_START_BLOCK = 27270000; // First block of HyperMap deployment
 // Parse command line arguments
 const args = process.argv.slice(2);
 let fromBlock = DEFAULT_START_BLOCK;
-let toBlock = 'latest';
+let toBlock: number | 'latest' = 'latest';
 
 // Always scan for all event types
 const eventTypes = ['Mint', 'Fact', 'Note', 'Gene', 'Transfer', 'Zero', 'Upgraded'];
@@ -76,7 +84,7 @@ const hypermapAbiPath = path.resolve(rootDir, 'src/abi/hypermap.abi.json');
 const hypermapAbi = JSON.parse(fs.readFileSync(hypermapAbiPath, 'utf8'));
 
 // Setup provider and contract
-const provider = createProvider(process.env.BASE_RPC_URL);
+const provider = createProvider(process.env.BASE_RPC_URL as string);
 const contract = createContract(provider, hypermapAbi);
 
 // Main scanner function
@@ -98,7 +106,7 @@ async function scanEvents() {
   console.log(`RPC URL: ${process.env.BASE_RPC_URL}`);
   console.log('----------------------------------------');
   
-  let eventCounts = {};
+  let eventCounts: Record<string, number> = {};
   let totalEvents = 0;
   eventTypes.forEach(type => { eventCounts[type] = 0 });
   
@@ -127,7 +135,7 @@ async function scanEvents() {
   // Run simple periodic status updates
   const statusInterval = setInterval(() => {
     // Simple one-line status update
-    const blocksProcessed = Math.min(toBlock, lastProcessedBlock || fromBlock) - fromBlock;
+    const blocksProcessed = Math.min(toBlock as number, lastProcessedBlock || fromBlock) - fromBlock;
     const blockCompletion = blockCount > 0 ? Math.round((blocksProcessed / blockCount) * 100) : 0;
     console.log(`STATUS: ${totalEvents} events found (${blockCompletion}% complete)`);
   }, 15000); // Update every 15 seconds
@@ -143,7 +151,7 @@ async function scanEvents() {
     // Outer loop for continuous mode
     do {
       // If in continuous mode and we've caught up, wait and check for new blocks
-      if (continuousModeActive && currentStartBlock > toBlock) {
+      if (continuousModeActive && currentStartBlock > (toBlock as number)) {
         console.log(`\nCaught up to block ${toBlock}, waiting for new blocks...`);
         await new Promise(resolve => setTimeout(resolve, CHAIN_HEAD_CHECK_INTERVAL));
         
@@ -155,7 +163,7 @@ async function scanEvents() {
           toBlock = newLatestBlock;
           
           // Update block count
-          blockCount = toBlock - fromBlock + 1;
+          blockCount = (toBlock as number) - fromBlock + 1;
           console.log(`Total blocks to scan: ${blockCount.toLocaleString()}`);
         } else {
           console.log(`No new blocks detected (still at ${latestBlock}), continuing to wait...`);
@@ -164,8 +172,8 @@ async function scanEvents() {
       }
       
       // Process in chunks of blocks
-      for (let startBlock = currentStartBlock; startBlock <= toBlock; startBlock += CHUNK_SIZE) {
-        const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock);
+      for (let startBlock = currentStartBlock; startBlock <= (toBlock as number); startBlock += CHUNK_SIZE) {
+        const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock as number);
         let retryCount = 0;
         let success = false;
         
@@ -180,7 +188,7 @@ async function scanEvents() {
             let totalChunkEvents = 0;
             
             // Create an array to hold all events from all types
-            let allEventsInChunk = [];
+            let allEventsInChunk: any[] = [];
             
             // Make a single query for all events from our contract in this block range
             try {
@@ -204,7 +212,7 @@ async function scanEvents() {
               skippedCount = events.length - processedCount;
               
             } catch (queryError) {
-              console.error(`    Error querying events:`, queryError.message);
+              console.error(`    Error querying events:`, (queryError as Error).message);
             }
             
             // Process all events without detailed logging
@@ -225,7 +233,7 @@ async function scanEvents() {
             console.log(`Found ${totalChunkEvents} new events (total: ${totalEvents})`);
             
             // Calculate new events by type in this chunk
-            const chunkCounts = {};
+            const chunkCounts: Record<string, number> = {};
             eventTypes.forEach(type => {
               chunkCounts[type] = allEventsInChunk.filter(e => e.eventType === type).length;
             });
@@ -237,7 +245,7 @@ async function scanEvents() {
             console.log("╠════════════╬════════════╬════════════╣");
             
             // Sort event types by total count (descending)
-            const sortedTypes = eventTypes.sort((a, b) => eventCounts[b] - eventCounts[a]);
+            const sortedTypes = [...eventTypes].sort((a, b) => eventCounts[b] - eventCounts[a]);
             
             for (const type of sortedTypes) {
               const chunkCount = chunkCounts[type] || 0;
@@ -254,19 +262,19 @@ async function scanEvents() {
             console.log("╚════════════╩════════════╩════════════╝");
             success = true;
           } catch (error) {
-            const errorMessage = error.toString();
+            const errorMessage = (error as Error).toString();
             // More focused rate limit detection
             const isTooManyRequests = 
               errorMessage.includes("Too Many Requests") || 
               errorMessage.includes("rate limit") || 
               errorMessage.includes("429") ||
               errorMessage.includes("exceeded") ||
-              (error.code === "SERVER_ERROR" && errorMessage.includes("limit"));
+              ((error as any).code === "SERVER_ERROR" && errorMessage.includes("limit"));
             
             // Show detailed error info for debugging
             console.log(`\n===== ERROR DETAILS =====`);
-            console.log(`Error type: ${error.constructor.name}`);
-            console.log(`Error code: ${error.code || 'none'}`);
+            console.log(`Error type: ${(error as Error).constructor.name}`);
+            console.log(`Error code: ${(error as any).code || 'none'}`);
             console.log(`Error message: ${errorMessage}`);
             console.log(`Rate limit detected: ${isTooManyRequests}`);
             console.log(`========================\n`);
