@@ -9,7 +9,8 @@
     "lint": "next lint",
     "scan-events": "node --loader ts-node/esm scripts/scan-events.ts",
     "index-events": "node --loader ts-node/esm scripts/index-events.ts",
-    "extract-events": "node --loader ts-node/esm scripts/extract-events.ts"
+    "extract-events": "node --loader ts-node/esm scripts/extract-events.ts",
+    "status": "node --loader ts-node/esm scripts/status.ts"
   },
   "type": "module",
   "dependencies": {
