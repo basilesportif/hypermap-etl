@@ -39,16 +39,39 @@ export function createContract(provider: ethers.JsonRpcProvider): ethers.Contrac
 }
 
 /**
- * Get the timestamp for a block
+ * Get the timestamp for a block with exponential backoff retry
  */
 export async function getBlockTimestamp(
   provider: ethers.JsonRpcProvider, 
-  blockNumber: number
+  blockNumber: number,
+  retryCount = 0,
+  maxRetries = 5
 ): Promise<number | null> {
   try {
     const block = await provider.getBlock(blockNumber);
     return block ? Number(block.timestamp) : null;
   } catch (err) {
+    // Check if error is rate limiting related
+    const errorMessage = String(err);
+    const isRateLimited = 
+      errorMessage.includes("Too Many Requests") || 
+      errorMessage.includes("rate limit") || 
+      errorMessage.includes("429") ||
+      errorMessage.includes("exceeded") ||
+      (err as any).code === "BAD_DATA";
+    
+    if (isRateLimited && retryCount < maxRetries) {
+      // Calculate exponential backoff delay: 2^retry * 1000ms + random jitter
+      const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+      console.warn(`Rate limited getting timestamp for block ${blockNumber}. Retrying in ${Math.round(delay/1000)}s... (Attempt ${retryCount + 1}/${maxRetries})`);
+      
+      // Wait for the calculated delay
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Retry with incremented counter
+      return getBlockTimestamp(provider, blockNumber, retryCount + 1, maxRetries);
+    }
+    
     console.warn(`Error getting timestamp for block ${blockNumber}:`, err);
     return null;
   }
