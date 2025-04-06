@@ -1,6 +1,11 @@
 /**
  * HyperMap Event Indexer
- * Usage: npm run index-events -- --from=27270000 --to=27280000
+ * Usage: npm run index-events -- --from=27270000 [--to=27280000] [--print]
+ * 
+ * Options:
+ *   --from=<block>     Starting block number (defaults to 27270000)
+ *   --to=<block>       Ending block number (defaults to 'latest')
+ *   --print            Only print events, don't store in database
  * 
  * Scans for events from the HyperMap contract on Base within the specified block range
  * and stores them in the database.
@@ -9,9 +14,23 @@
 // Import libraries
 import { ethers } from 'ethers';
 import mongoose from 'mongoose';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import {
+  createProvider,
+  createContract,
+  parseLogsToEvents,
+  formatTimestamp,
+  formatHex,
+  CONTRACT_ADDRESS
+} from '../src/lib/services/events.js';
+import {
+  initMongoConnection,
+  storeEvents,
+  processEventsToEntries
+} from '../src/lib/services/mongodb.js';
+import { HypermapEvent } from '../src/types/index.js';
 
 // Get current directory
 const __filename = fileURLToPath(import.meta.url);
@@ -47,14 +66,13 @@ if (!process.env.MONGODB_URI) {
   process.exit(1);
 }
 
-// Contract constants
-const CONTRACT_ADDRESS = '0x000000000044C6B8Cb4d8f0F889a3E47664EAeda';
+// Constants
 const DEFAULT_START_BLOCK = 27270000; // First block of HyperMap deployment
 
 // Parse command line arguments
 const args = process.argv.slice(2);
 let fromBlock = DEFAULT_START_BLOCK;
-let toBlock = 'latest';
+let toBlock: number | 'latest' = 'latest';
 let onlyPrint = false;
 
 // Always index all event types
@@ -73,206 +91,12 @@ args.forEach(arg => {
   }
 });
 
-// Load ABI from file
-const hypermapAbiPath = path.resolve(rootDir, 'src/abi/hypermap.abi.json');
-const hypermapAbi = JSON.parse(fs.readFileSync(hypermapAbiPath, 'utf8'));
-
 // Setup provider and contract
-const provider = new ethers.JsonRpcProvider(process.env.BASE_RPC_URL);
-const contract = new ethers.Contract(CONTRACT_ADDRESS, hypermapAbi, provider);
+const provider = createProvider(process.env.BASE_RPC_URL as string);
+const contract = createContract(provider);
 
-// Define Mongoose schema
-const HypermapEventSchema = new mongoose.Schema({
-  eventType: { type: String, required: true, index: true },
-  blockNumber: { type: Number, required: true, index: true },
-  blockHash: { type: String, required: true },
-  transactionHash: { type: String, required: true, index: true },
-  transactionIndex: { type: Number, required: true },
-  logIndex: { type: Number, required: true },
-  timestamp: { type: Number },
-  
-  // Mint event fields
-  parenthash: { type: String, sparse: true, index: true },
-  childhash: { type: String, sparse: true, index: true },
-  
-  // Fact/Note event fields
-  facthash: { type: String, sparse: true },
-  notehash: { type: String, sparse: true },
-  
-  // Common fields - updated for bytes types
-  labelhash: { type: String, sparse: true, index: true }, // Now bytes (indexed)
-  label: { type: String, sparse: true, index: true },     // Now bytes, converted to string
-  data: { type: String, sparse: true },                   // Still bytes
-  
-  // Gene event fields
-  entry: { type: String, sparse: true, index: true },
-  gene: { type: String, sparse: true },
-  
-  // Transfer event fields
-  from: { type: String, sparse: true, index: true },
-  to: { type: String, sparse: true, index: true },
-  id: { type: String, sparse: true },
-  
-  // Zero event fields
-  zeroTba: { type: String, sparse: true },
-  
-  // Upgraded event fields
-  implementation: { type: String, sparse: true }
-}, { 
-  timestamps: true 
-});
-
-// Create models
-let HypermapEventModel;
-
-async function getBlockTimestamp(blockNumber) {
-  const block = await provider.getBlock(blockNumber);
-  return block ? Number(block.timestamp) : null;
-}
-
-// Process a single event
-async function processEvent(event) {
-  // Validate we have a fragment
-  if (!event || !event.fragment) {
-    console.warn(`Skipping event without fragment: ${JSON.stringify(event)}`); 
-    return null;
-  }
-  
-  // Get event name with fallback
-  const eventName = event.fragment.name || '';
-  if (!eventName) {
-    console.warn(`Skipping event with empty name: ${JSON.stringify(event.fragment)}`);
-    return null;
-  }
-  
-  // Get timestamp with fallback
-  let timestamp;
-  try {
-    timestamp = await getBlockTimestamp(event.blockNumber);
-  } catch (err) {
-    console.warn(`Error getting timestamp for block ${event.blockNumber}: ${err.message}`);
-    timestamp = null;
-  }
-  
-  // Create base event data
-  const baseEvent = {
-    blockNumber: event.blockNumber,
-    blockHash: event.blockHash,
-    transactionHash: event.transactionHash,
-    transactionIndex: event.transactionIndex,
-    logIndex: event.index || event.logIndex, // ethers v6 uses index, fallback to logIndex
-    timestamp
-  };
-
-  let eventData;
-  
-  // Safely get arguments with fallbacks
-  const args = event.args || [];
-  
-  switch(eventName) {
-    case 'Mint': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Mint',
-        parenthash: args[0],
-        childhash: args[1],
-        // labelhash is now bytes and indexed
-        labelhash: args[2],
-        // label is now bytes instead of string
-        label: args[3] ? ethers.toUtf8String(args[3]) : ''
-      };
-      break;
-    }
-    
-    case 'Fact': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Fact',
-        parenthash: args[0],
-        facthash: args[1],
-        // labelhash is now bytes and indexed
-        labelhash: args[2],
-        // label is now bytes instead of string
-        label: args[3] ? ethers.toUtf8String(args[3]) : '',
-        data: args[4]
-      };
-      break;
-    }
-    
-    case 'Note': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Note',
-        parenthash: args[0],
-        notehash: args[1],
-        // labelhash is now bytes and indexed
-        labelhash: args[2],
-        // label is now bytes instead of string
-        label: args[3] ? ethers.toUtf8String(args[3]) : '',
-        data: args[4]
-      };
-      break;
-    }
-    
-    case 'Gene': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Gene',
-        entry: args[0],
-        gene: args[1]
-      };
-      break;
-    }
-    
-    case 'Transfer': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Transfer',
-        from: args[0],
-        to: args[1],
-        id: args[2] ? args[2].toString() : null
-      };
-      break;
-    }
-    
-    case 'Zero': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Zero',
-        zeroTba: args[0]
-      };
-      break;
-    }
-    
-    case 'Upgraded': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Upgraded',
-        implementation: args[0]
-      };
-      break;
-    }
-    
-    default:
-      console.warn(`Unknown event type: ${eventName}`);
-      return null;
-  }
-  
-  return eventData;
-}
-
-// Utility functions for better output
-function formatTimestamp(timestamp) {
-  return timestamp ? new Date(timestamp * 1000).toISOString() : 'Unknown';
-}
-
-function formatHex(hex, length = 10) {
-  if (!hex) return 'null';
-  return hex.substring(0, length) + '...' + hex.substring(hex.length - 4);
-}
-
-// Store events in the database
-async function storeEvents(events) {
+// Store events in the database (wrapper for print-only mode)
+async function storeEventsWithPrintMode(events: HypermapEvent[]) {
   if (events.length === 0) return;
   
   if (onlyPrint) {
@@ -280,17 +104,7 @@ async function storeEvents(events) {
     return;
   }
   
-  try {
-    await HypermapEventModel.insertMany(events, { ordered: false });
-    console.log(`  Stored ${events.length} events in the database`);
-  } catch (error) {
-    // Handle duplicate key errors
-    if (error.code === 11000) {
-      console.log(`  Some events already exist in the database, continuing...`);
-    } else {
-      console.error(`  Error storing events:`, error);
-    }
-  }
+  await storeEvents(events);
 }
 
 // Main indexer function
@@ -303,19 +117,16 @@ async function indexEvents() {
   console.log(`Print only mode: ${onlyPrint ? 'Yes' : 'No'}`);
   console.log('----------------------------------------');
   
-  // Connect to MongoDB
+  // Connect to MongoDB using our service
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await initMongoConnection(process.env.MONGODB_URI as string);
     console.log('Connected to MongoDB');
-    
-    // Create model
-    HypermapEventModel = mongoose.models.HypermapEvent || mongoose.model('HypermapEvent', HypermapEventSchema);
   } catch (error) {
     console.error('Error connecting to MongoDB:', error);
     process.exit(1);
   }
   
-  let eventCounts = {};
+  let eventCounts: Record<string, number> = {};
   let totalEvents = 0;
   eventTypes.forEach(type => { eventCounts[type] = 0 });
   
@@ -326,7 +137,7 @@ async function indexEvents() {
   }
   
   // Calculate the number of blocks
-  const blockCount = toBlock - fromBlock + 1;
+  const blockCount = (toBlock as number) - fromBlock + 1;
   console.log(`Scanning ${blockCount.toLocaleString()} blocks`);
   
   // Define chunk size and rate limiting parameters
@@ -338,7 +149,7 @@ async function indexEvents() {
   // Run simple periodic status updates
   const statusInterval = setInterval(() => {
     // Simple one-line status update
-    const blocksProcessed = Math.min(toBlock, lastProcessedBlock || fromBlock) - fromBlock;
+    const blocksProcessed = Math.min(toBlock as number, lastProcessedBlock || fromBlock) - fromBlock;
     const blockCompletion = blockCount > 0 ? Math.round((blocksProcessed / blockCount) * 100) : 0;
     console.log(`STATUS: ${totalEvents} events found (${blockCompletion}% complete)`);
   }, 15000); // Update every 15 seconds
@@ -348,8 +159,8 @@ async function indexEvents() {
   
   try {
     // Process in chunks of blocks
-    for (let startBlock = fromBlock; startBlock <= toBlock; startBlock += CHUNK_SIZE) {
-      const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock);
+    for (let startBlock = fromBlock; startBlock <= (toBlock as number); startBlock += CHUNK_SIZE) {
+      const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock as number);
       let retryCount = 0;
       let success = false;
       
@@ -359,7 +170,7 @@ async function indexEvents() {
         try {
           // Scan for all event types at once
           let totalChunkEvents = 0;
-          let allProcessedEvents = [];
+          let allProcessedEvents: HypermapEvent[] = [];
           
           // Make a single query for all events from our contract in this block range
           try {
@@ -374,34 +185,16 @@ async function indexEvents() {
             let processedCount = 0;
             let skippedCount = 0;
             
-            // Parse events using contract interface (without logging)
-            for (const event of events) {
-              try {
-                const parsedLog = contract.interface.parseLog(event);
-                if (parsedLog) {
-                  const processedEvent = await processEvent({
-                    ...event,
-                    fragment: parsedLog.fragment,
-                    args: parsedLog.args
-                  });
-                  
-                  if (processedEvent) {
-                    allProcessedEvents.push(processedEvent);
-                    processedCount++;
-                  } else {
-                    skippedCount++;
-                  }
-                } else {
-                  skippedCount++;
-                }
-              } catch (eventError) {
-                // Silent error handling
-                skippedCount++;
-              }
-            }
+            // Parse logs to structured events using our events service
+            const processedEvents = await parseLogsToEvents(events, contract, provider);
+            allProcessedEvents.push(...processedEvents);
+            
+            // Update counters
+            processedCount = processedEvents.length;
+            skippedCount = events.length - processedCount;
             
           } catch (queryError) {
-            console.error(`    Error querying events:`, queryError.message);
+            console.error(`    Error querying events:`, (queryError as Error).message);
           }
           
           // Process all events without detailed logging
@@ -416,7 +209,12 @@ async function indexEvents() {
           
           // Store events in database
           if (allProcessedEvents.length > 0) {
-            await storeEvents(allProcessedEvents);
+            await storeEventsWithPrintMode(allProcessedEvents);
+            
+            // Process events to update entries
+            if (!onlyPrint) {
+              await processEventsToEntries(allProcessedEvents);
+            }
           }
           
           // Update last processed block for progress tracking
@@ -427,7 +225,7 @@ async function indexEvents() {
           console.log(`Found ${totalChunkEvents} new events (total: ${totalEvents})`);
           
           // Calculate new events by type in this chunk
-          const chunkCounts = {};
+          const chunkCounts: Record<string, number> = {};
           eventTypes.forEach(type => {
             chunkCounts[type] = allProcessedEvents.filter(e => e.eventType === type).length;
           });
@@ -439,7 +237,7 @@ async function indexEvents() {
           console.log("╠════════════╬════════════╬════════════╣");
           
           // Sort event types by total count (descending)
-          const sortedTypes = eventTypes.sort((a, b) => eventCounts[b] - eventCounts[a]);
+          const sortedTypes = [...eventTypes].sort((a, b) => eventCounts[b] - eventCounts[a]);
           
           for (const type of sortedTypes) {
             const chunkCount = chunkCounts[type] || 0;
@@ -456,19 +254,19 @@ async function indexEvents() {
           console.log("╚════════════╩════════════╩════════════╝");
           success = true;
         } catch (error) {
-          const errorMessage = error.toString();
+          const errorMessage = (error as Error).toString();
           // More focused rate limit detection
           const isTooManyRequests = 
             errorMessage.includes("Too Many Requests") || 
             errorMessage.includes("rate limit") || 
             errorMessage.includes("429") ||
             errorMessage.includes("exceeded") ||
-            (error.code === "SERVER_ERROR" && errorMessage.includes("limit"));
+            ((error as any).code === "SERVER_ERROR" && errorMessage.includes("limit"));
           
           // Show detailed error info for debugging
           console.log(`\n===== ERROR DETAILS =====`);
-          console.log(`Error type: ${error.constructor.name}`);
-          console.log(`Error code: ${error.code || 'none'}`);
+          console.log(`Error type: ${(error as Error).constructor.name}`);
+          console.log(`Error code: ${(error as any).code || 'none'}`);
           console.log(`Error message: ${errorMessage}`);
           console.log(`Rate limit detected: ${isTooManyRequests}`);
           console.log(`========================\n`);
@@ -513,7 +311,7 @@ async function indexEvents() {
     console.log('No events found.');
   }
   
-  console.log('=============================================');;
+  console.log('=============================================');
   
   // Disconnect from MongoDB
   await mongoose.disconnect();

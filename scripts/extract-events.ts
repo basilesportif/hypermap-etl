@@ -1,16 +1,29 @@
 /**
- * HyperMap Event Scanner
- * Usage: npm run scan-events -- --from=27270000 --to=27280000
+ * HyperMap Event Extractor
+ * Usage: npm run extract-events -- --from=27270000 [--to=27280000]
+ * 
+ * Options:
+ *   --from=<block>     Starting block number (defaults to 27270000)
+ *   --to=<block>       Ending block number (defaults to 'latest')
  * 
  * Scans for events from the HyperMap contract on Base within the specified block range
- * and prints them to the console. Does not store them in the database.
+ * and stores ONLY the events in the database (no entry processing).
+ * Uses event ID as MongoDB _id for upsert support.
  */
 
 // Import libraries
 import { ethers } from 'ethers';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { MongoClient } from 'mongodb';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import {
+  createProvider,
+  createContract,
+  parseLogsToEvents,
+  CONTRACT_ADDRESS
+} from '../src/lib/services/events.js';
+import { HypermapEvent } from '../src/types/index.js';
 
 // Get current directory
 const __filename = fileURLToPath(import.meta.url);
@@ -41,18 +54,22 @@ if (!process.env.BASE_RPC_URL) {
   process.exit(1);
 }
 
-// Contract constants
-const CONTRACT_ADDRESS = '0x000000000044C6B8Cb4d8f0F889a3E47664EAeda';
+if (!process.env.MONGODB_URI) {
+  console.error('Error: MONGODB_URI is not defined in .env or .env.local file');
+  process.exit(1);
+}
+
+// Constants
 const DEFAULT_START_BLOCK = 27270000; // First block of HyperMap deployment
 
 // Parse command line arguments
 const args = process.argv.slice(2);
 let fromBlock = DEFAULT_START_BLOCK;
-let toBlock = 'latest';
+let toBlock: number | 'latest' = 'latest';
 
-// Always scan for all event types
+// Always extract all event types
 const eventTypes = ['Mint', 'Fact', 'Note', 'Gene', 'Transfer', 'Zero', 'Upgraded'];
-console.log("Scanning for ALL event types regardless of command line arguments");
+console.log("Extracting ALL event types");
 
 // Parse arguments
 args.forEach(arg => {
@@ -64,169 +81,99 @@ args.forEach(arg => {
   }
 });
 
-// Load ABI from file
-const hypermapAbiPath = path.resolve(rootDir, 'src/abi/hypermap.abi.json');
-const hypermapAbi = JSON.parse(fs.readFileSync(hypermapAbiPath, 'utf8'));
-
 // Setup provider and contract
-const provider = new ethers.JsonRpcProvider(process.env.BASE_RPC_URL);
-const contract = new ethers.Contract(CONTRACT_ADDRESS, hypermapAbi, provider);
+const provider = createProvider(process.env.BASE_RPC_URL as string);
+const contract = createContract(provider);
 
-async function getBlockTimestamp(blockNumber) {
-  const block = await provider.getBlock(blockNumber);
-  return block ? Number(block.timestamp) : null;
+// Generate a unique ID for each event based on its properties
+function generateEventId(event: HypermapEvent): string {
+  return `${event.transactionHash}_${event.logIndex}`;
 }
 
-// Process a single event
-async function processEvent(event) {
-  // Validate we have a fragment
-  if (!event || !event.fragment) {
-    console.warn(`Skipping event without fragment: ${JSON.stringify(event)}`);
-    return null;
-  }
+// Store events in MongoDB with _id as the event-specific ID
+// Using native MongoDB driver to avoid Mongoose issues
+async function storeEvents(events: HypermapEvent[], collection: any): Promise<void> {
+  if (!events.length) return;
   
-  // Get event name with fallback
-  const eventName = event.fragment.name || '';
-  if (!eventName) {
-    console.warn(`Skipping event with empty name: ${JSON.stringify(event.fragment)}`);
-    return null;
-  }
-  
-  // Get timestamp with fallback
-  let timestamp;
   try {
-    timestamp = await getBlockTimestamp(event.blockNumber);
-  } catch (err) {
-    console.warn(`Error getting timestamp for block ${event.blockNumber}: ${err.message}`);
-    timestamp = null;
+    // Prepare events with _id field set to event-specific ID
+    const eventsWithId = events.map(event => {
+      const eventWithId = {
+        ...event,
+        _id: generateEventId(event)
+      };
+      return eventWithId;
+    });
+    
+    // Use bulkWrite with updateOne operations (upsert)
+    const operations = eventsWithId.map(event => ({
+      updateOne: {
+        filter: { _id: event._id },
+        update: { $set: event },
+        upsert: true
+      }
+    }));
+
+    console.log(`Preparing to store ${operations.length} events...`);
+    
+    // Log the first operation for debugging
+    if (operations.length > 0) {
+      console.log('Sample operation:', JSON.stringify(operations[0]).substring(0, 200) + '...');
+    }
+    
+    const result = await collection.bulkWrite(operations, { ordered: false });
+    
+    console.log(`MongoDB result: ${JSON.stringify(result)}`);
+    console.log(`Stored ${result.upsertedCount} new events, updated ${result.modifiedCount} existing events`);
+  } catch (error: any) {
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      console.log(`Some events already exist in database, skipped duplicates`);
+    } else {
+      console.error(`Error storing events:`, error);
+    }
   }
-  
-  // Create base event data
-  const baseEvent = {
-    blockNumber: event.blockNumber,
-    blockHash: event.blockHash,
-    transactionHash: event.transactionHash,
-    transactionIndex: event.transactionIndex,
-    logIndex: event.index || event.logIndex, // ethers v6 uses index, fallback to logIndex
-    timestamp
-  };
-
-  let eventData;
-  
-  // Safely get arguments with fallbacks
-  const args = event.args || [];
-  
-  switch(eventName) {
-    case 'Mint': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Mint',
-        parenthash: args[0],
-        childhash: args[1],
-        // labelhash is now bytes and indexed
-        labelhash: args[2],
-        // label is now bytes instead of string
-        label: args[3] ? ethers.toUtf8String(args[3]) : ''
-      };
-      break;
-    }
-    
-    case 'Fact': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Fact',
-        parenthash: args[0],
-        facthash: args[1],
-        // labelhash is now bytes and indexed
-        labelhash: args[2],
-        // label is now bytes instead of string
-        label: args[3] ? ethers.toUtf8String(args[3]) : '',
-        data: args[4]
-      };
-      break;
-    }
-    
-    case 'Note': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Note',
-        parenthash: args[0],
-        notehash: args[1],
-        // labelhash is now bytes and indexed
-        labelhash: args[2],
-        // label is now bytes instead of string
-        label: args[3] ? ethers.toUtf8String(args[3]) : '',
-        data: args[4]
-      };
-      break;
-    }
-    
-    case 'Gene': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Gene',
-        entry: args[0],
-        gene: args[1]
-      };
-      break;
-    }
-    
-    case 'Transfer': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Transfer',
-        from: args[0],
-        to: args[1],
-        id: args[2] ? args[2].toString() : null
-      };
-      break;
-    }
-    
-    case 'Zero': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Zero',
-        zeroTba: args[0]
-      };
-      break;
-    }
-    
-    case 'Upgraded': {
-      eventData = {
-        ...baseEvent,
-        eventType: 'Upgraded',
-        implementation: args[0]
-      };
-      break;
-    }
-    
-    default:
-      console.warn(`Unknown event type: ${eventName}`);
-      return null;
-  }
-  
-  return eventData;
 }
 
-// Utility functions for better output
-function formatTimestamp(timestamp) {
-  return timestamp ? new Date(timestamp * 1000).toISOString() : 'Unknown';
-}
-
-function formatHex(hex, length = 10) {
-  if (!hex) return 'null';
-  return hex.substring(0, length) + '...' + hex.substring(hex.length - 4);
-}
-
-// Main scanner function
-async function scanEvents() {
-  console.log(`Starting event scan from block ${fromBlock} to ${toBlock}`);
-  console.log(`Scanning for events: ${eventTypes.join(', ')}`);
+// Main extractor function
+async function extractEvents() {
+  console.log(`Starting event extraction from block ${fromBlock} to ${toBlock}`);
+  console.log(`Extracting events: ${eventTypes.join(', ')}`);
   console.log(`Contract address: ${CONTRACT_ADDRESS}`);
+  console.log(`MongoDB URI: ${process.env.MONGODB_URI}`);
   console.log(`RPC URL: ${process.env.BASE_RPC_URL}`);
   console.log('----------------------------------------');
   
-  let eventCounts = {};
+  // Connect to MongoDB using native driver
+  let client: MongoClient | null = null;
+  let db: any = null;
+  let collection: any = null;
+  
+  try {
+    console.log(`Connecting to MongoDB at ${process.env.MONGODB_URI}`);
+    client = new MongoClient(process.env.MONGODB_URI as string);
+    await client.connect();
+    console.log('Connected to MongoDB successfully');
+    
+    db = client.db(); // Get default database from connection string
+    
+    // Ensure the collection exists and has indexes
+    collection = db.collection('hypermapevents');
+    
+    // Ensure indexes for efficient querying
+    await collection.createIndex({ eventType: 1 });
+    await collection.createIndex({ blockNumber: 1 });
+    await collection.createIndex({ transactionHash: 1 });
+    
+    // Test connection by checking collections
+    const collections = await db.listCollections().toArray();
+    console.log(`Available collections: ${collections.map((c: any) => c.name).join(', ')}`);
+  } catch (error) {
+    console.error('Error connecting to MongoDB:', error);
+    process.exit(1);
+  }
+  
+  let eventCounts: Record<string, number> = {};
   let totalEvents = 0;
   eventTypes.forEach(type => { eventCounts[type] = 0 });
   
@@ -237,11 +184,11 @@ async function scanEvents() {
   }
   
   // Calculate the number of blocks
-  const blockCount = toBlock - fromBlock + 1;
+  const blockCount = (toBlock as number) - fromBlock + 1;
   console.log(`Scanning ${blockCount.toLocaleString()} blocks`);
   
   // Define chunk size and rate limiting parameters
-  const CHUNK_SIZE = 5000; // Reduce to 5k blocks for fewer rate limits
+  const CHUNK_SIZE = 20000; // Process 20k blocks at a time
   const DEFAULT_DELAY = 2000; // Increase default delay to 2 seconds
   const MAX_RETRIES = 5;
   const BASE_RETRY_DELAY = 3000; // 3 seconds for exponential backoff
@@ -249,7 +196,7 @@ async function scanEvents() {
   // Run simple periodic status updates
   const statusInterval = setInterval(() => {
     // Simple one-line status update
-    const blocksProcessed = Math.min(toBlock, lastProcessedBlock || fromBlock) - fromBlock;
+    const blocksProcessed = Math.min(toBlock as number, lastProcessedBlock || fromBlock) - fromBlock;
     const blockCompletion = blockCount > 0 ? Math.round((blocksProcessed / blockCount) * 100) : 0;
     console.log(`STATUS: ${totalEvents} events found (${blockCompletion}% complete)`);
   }, 15000); // Update every 15 seconds
@@ -259,8 +206,8 @@ async function scanEvents() {
   
   try {
     // Process in chunks of blocks
-    for (let startBlock = fromBlock; startBlock <= toBlock; startBlock += CHUNK_SIZE) {
-      const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock);
+    for (let startBlock = fromBlock; startBlock <= (toBlock as number); startBlock += CHUNK_SIZE) {
+      const endBlock = Math.min(startBlock + CHUNK_SIZE - 1, toBlock as number);
       let retryCount = 0;
       let success = false;
       
@@ -270,13 +217,11 @@ async function scanEvents() {
         try {
           // Scan for all event types at once
           let totalChunkEvents = 0;
-          
-          // Create an array to hold all events from all types
-          let allEventsInChunk = [];
+          let allProcessedEvents: HypermapEvent[] = [];
           
           // Make a single query for all events from our contract in this block range
           try {
-            // Query with filter by contract address (without logging)
+            // Query with filter by contract address
             const allEventsFilter = { address: CONTRACT_ADDRESS };
             const events = await provider.getLogs({
               ...allEventsFilter,
@@ -284,47 +229,27 @@ async function scanEvents() {
               toBlock: endBlock
             });
             
-            let processedCount = 0;
-            let skippedCount = 0;
-            
-            // Parse events using contract interface (without logging)
-            for (const event of events) {
-              try {
-                const parsedLog = contract.interface.parseLog(event);
-                if (parsedLog) {
-                  const processedEvent = await processEvent({
-                    ...event,
-                    fragment: parsedLog.fragment,
-                    args: parsedLog.args
-                  });
-                  
-                  if (processedEvent) {
-                    allEventsInChunk.push(processedEvent);
-                    processedCount++;
-                  } else {
-                    skippedCount++;
-                  }
-                } else {
-                  skippedCount++;
-                }
-              } catch (eventError) {
-                // Silent error handling
-                skippedCount++;
-              }
-            }
-            
+            // Parse logs to structured events
+            const processedEvents = await parseLogsToEvents(events, contract, provider);
+            allProcessedEvents.push(...processedEvents);
           } catch (queryError) {
-            console.error(`    Error querying events:`, queryError.message);
+            console.error(`    Error querying events:`, (queryError as Error).message);
           }
           
-          // Process all events without detailed logging
-          for (const processedEvent of allEventsInChunk) {
+          // Count events by type
+          for (const processedEvent of allProcessedEvents) {
             const eventType = processedEvent.eventType;
             totalEvents++;
             totalChunkEvents++;
             eventCounts[eventType]++;
-            
-            // Skip detailed event logging - too verbose
+          }
+          
+          // Store events in database
+          if (allProcessedEvents.length > 0) {
+            console.log(`Storing ${allProcessedEvents.length} events in database...`);
+            await storeEvents(allProcessedEvents, collection);
+          } else {
+            console.log('No events to store in this chunk');
           }
           
           // Update last processed block for progress tracking
@@ -332,22 +257,22 @@ async function scanEvents() {
           
           // Block range header
           console.log(`\n=== BLOCKS ${startBlock.toLocaleString()}-${endBlock.toLocaleString()} ===`);
-          console.log(`Found ${totalChunkEvents} new events (total: ${totalEvents})`);
+          console.log(`Found ${totalChunkEvents} events (total: ${totalEvents})`);
           
-          // Calculate new events by type in this chunk
-          const chunkCounts = {};
+          // Calculate events by type in this chunk
+          const chunkCounts: Record<string, number> = {};
           eventTypes.forEach(type => {
-            chunkCounts[type] = allEventsInChunk.filter(e => e.eventType === type).length;
+            chunkCounts[type] = allProcessedEvents.filter(e => e.eventType === type).length;
           });
           
-          // Display vertical table of ALL event types (running totals)
+          // Display summary table
           console.log("\nEVENT TYPE SUMMARY:");
           console.log("╔════════════╦════════════╦════════════╗");
           console.log("║ EVENT TYPE ║ THIS CHUNK ║ TOTAL      ║");
           console.log("╠════════════╬════════════╬════════════╣");
           
           // Sort event types by total count (descending)
-          const sortedTypes = eventTypes.sort((a, b) => eventCounts[b] - eventCounts[a]);
+          const sortedTypes = [...eventTypes].sort((a, b) => eventCounts[b] - eventCounts[a]);
           
           for (const type of sortedTypes) {
             const chunkCount = chunkCounts[type] || 0;
@@ -364,19 +289,19 @@ async function scanEvents() {
           console.log("╚════════════╩════════════╩════════════╝");
           success = true;
         } catch (error) {
-          const errorMessage = error.toString();
-          // More focused rate limit detection
+          const errorMessage = (error as Error).toString();
+          // Rate limit detection
           const isTooManyRequests = 
             errorMessage.includes("Too Many Requests") || 
             errorMessage.includes("rate limit") || 
             errorMessage.includes("429") ||
             errorMessage.includes("exceeded") ||
-            (error.code === "SERVER_ERROR" && errorMessage.includes("limit"));
+            ((error as any).code === "SERVER_ERROR" && errorMessage.includes("limit"));
           
-          // Show detailed error info for debugging
+          // Show error details
           console.log(`\n===== ERROR DETAILS =====`);
-          console.log(`Error type: ${error.constructor.name}`);
-          console.log(`Error code: ${error.code || 'none'}`);
+          console.log(`Error type: ${(error as Error).constructor.name}`);
+          console.log(`Error code: ${(error as any).code || 'none'}`);
           console.log(`Error message: ${errorMessage}`);
           console.log(`Rate limit detected: ${isTooManyRequests}`);
           console.log(`========================\n`);
@@ -394,16 +319,22 @@ async function scanEvents() {
         }
       }
       
-      // Add the default delay between chunks to avoid overwhelming the RPC node (silently)
+      // Add delay between chunks
       await new Promise(resolve => setTimeout(resolve, DEFAULT_DELAY));
     }
   } finally {
     // Make sure we clear the interval even if there's an error
     clearInterval(statusInterval);
+    
+    // Close MongoDB connection
+    if (client) {
+      await client.close();
+      console.log('Disconnected from MongoDB');
+    }
   }
   
   console.log('\n=============== FINAL RESULTS ===============');
-  console.log(`SCAN COMPLETE: Found ${totalEvents} total events`);
+  console.log(`EXTRACTION COMPLETE: Found ${totalEvents} total events`);
   
   // Get event counts sorted by count (high to low)
   const typeEntries = Object.entries(eventCounts)
@@ -424,8 +355,8 @@ async function scanEvents() {
   console.log('=============================================');
 }
 
-// Run the scanner
-scanEvents()
+// Run the extractor
+extractEvents()
   .then(() => process.exit(0))
   .catch(error => {
     console.error('Fatal error:', error);

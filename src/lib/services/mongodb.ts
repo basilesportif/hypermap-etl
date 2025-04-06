@@ -1,115 +1,141 @@
+/**
+ * MongoDB Service
+ * 
+ * Provides functions for interacting with MongoDB database.
+ * Handles connection pooling, collection access, and data operations.
+ */
+
 import { MongoClient, Db } from 'mongodb';
 import mongoose from 'mongoose';
-import { 
-  HypermapEvent, MintEvent, FactEvent, NoteEvent, 
-  GeneEvent, TransferEvent, HypermapEntry 
-} from '../types';
-import { HypermapEntryModel, HypermapEventModel, initDatabase } from '../models';
-import { ROOT_HASH } from '../constants';
+import { HypermapEvent, MintEvent, FactEvent, NoteEvent, 
+         GeneEvent, TransferEvent, HypermapEntry } from '../../types/index.js';
+import { ROOT_HASH } from '../../constants.js';
 
-if (!process.env.MONGODB_URI) {
-  throw new Error('Invalid/Missing environment variable: "MONGODB_URI"');
-}
+// MongoDB Model types (will be imported from models)
+let HypermapEventModel: any;
+let HypermapEntryModel: any;
 
-const uri = process.env.MONGODB_URI;
-const options = {};
-
-let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
-
-// Client setup logic for development vs production
-if (process.env.NODE_ENV === 'development') {
-  // In development mode, use a global variable so that the value
-  // is preserved across module reloads caused by HMR (Hot Module Replacement).
-  let globalWithMongo = global as typeof globalThis & {
-    _mongoClientPromise?: Promise<MongoClient>;
-    _mongoose_connected?: boolean;
-  };
-
-  if (!globalWithMongo._mongoClientPromise) {
-    client = new MongoClient(uri, options);
-    globalWithMongo._mongoClientPromise = client.connect();
+/**
+ * Initialize MongoDB connection
+ */
+export async function initMongoConnection(uri: string): Promise<void> {
+  if (!uri) {
+    throw new Error('MongoDB URI is required');
   }
-  clientPromise = globalWithMongo._mongoClientPromise;
-  
-  // Setup mongoose connection if not already connected
-  if (!globalWithMongo._mongoose_connected) {
-    mongoose.connect(uri).then(() => {
-      console.log('Mongoose connected successfully');
-      globalWithMongo._mongoose_connected = true;
-      initDatabase();
-    });
-  }
-} else {
-  // In production mode, it's best to not use a global variable.
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect();
-  
-  // Setup mongoose connection
-  mongoose.connect(uri).then(() => {
-    console.log('Mongoose connected successfully');
-    initDatabase();
-  });
-}
-
-// Export a module-scoped MongoClient promise
-export default clientPromise;
-
-// Get a database instance
-export async function getDbInstance(): Promise<Db> {
-  const client = await clientPromise;
-  return client.db();
-}
-
-// Store processed events in MongoDB
-export async function storeEvents(events: HypermapEvent[]): Promise<void> {
-  if (events.length === 0) return;
   
   try {
-    // Insert events one by one to avoid failing the entire batch
-    let successCount = 0;
+    await mongoose.connect(uri);
+    console.log('Connected to MongoDB');
     
-    for (const event of events) {
-      try {
-        await HypermapEventModel.create(event);
-        successCount++;
-      } catch (err) {
-        console.error('Error storing individual event:', err);
-        console.log('Event that failed:', JSON.stringify(event, null, 2));
-        // Continue with the next event
-      }
-    }
+    // Import models after connection to avoid model overwrite issues
+    const { HypermapEventModel: EventModel, HypermapEntryModel: EntryModel } = 
+      await import('../../models/index.js');
     
-    console.log(`Stored ${successCount} out of ${events.length} events in the database`);
+    HypermapEventModel = EventModel;
+    HypermapEntryModel = EntryModel;
+    
   } catch (error) {
-    console.error('Error in storeEvents function:', error);
-    // Continue processing instead of throwing
+    console.error('Error connecting to MongoDB:', error);
+    throw error;
   }
 }
 
-// Process events to build/update namespace entries
+/**
+ * Store events in MongoDB
+ */
+export async function storeEvents(events: HypermapEvent[]): Promise<void> {
+  if (!events.length) return;
+  
+  try {
+    // Validate models are initialized
+    if (!HypermapEventModel) {
+      throw new Error('MongoDB models not initialized');
+    }
+    
+    // Insert events
+    const result = await HypermapEventModel.insertMany(events, { 
+      ordered: false, // Continue processing if some docs fail
+      rawResult: true  // Get detailed result info
+    });
+    
+    console.log(`Stored ${result.insertedCount} events in MongoDB`);
+  } catch (error: any) {
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      console.log(`Some events already exist in database, skipped duplicates`);
+    } else {
+      console.error(`Error storing events:`, error);
+    }
+  }
+}
+
+/**
+ * Get events for an entry
+ */
+export async function getEventsForEntry(namehash: string): Promise<HypermapEvent[]> {
+  // Validate models are initialized
+  if (!HypermapEventModel) {
+    throw new Error('MongoDB models not initialized');
+  }
+  
+  // Query all event types that might reference this entry
+  const events = await HypermapEventModel.find({
+    $or: [
+      { eventType: 'Mint', parenthash: namehash },
+      { eventType: 'Mint', childhash: namehash },
+      { eventType: 'Fact', parenthash: namehash },
+      { eventType: 'Note', parenthash: namehash },
+      { eventType: 'Gene', entry: namehash },
+      { eventType: 'Transfer', id: namehash }
+    ]
+  }).sort({ blockNumber: 1, logIndex: 1 }).lean();
+  
+  return events;
+}
+
+/**
+ * Get an entry by namehash
+ */
+export async function getEntry(namehash: string): Promise<HypermapEntry | null> {
+  // Validate models are initialized
+  if (!HypermapEntryModel) {
+    throw new Error('MongoDB models not initialized');
+  }
+  
+  const entry = await HypermapEntryModel.findOne({ namehash }).lean();
+  return entry;
+}
+
+/**
+ * Process events to update entries
+ * This function updates the entry database based on events
+ */
 export async function processEventsToEntries(events: HypermapEvent[]): Promise<void> {
-  if (events.length === 0) return;
+  if (!events.length) return;
+  
+  // Validate models are initialized
+  if (!HypermapEntryModel) {
+    throw new Error('MongoDB models not initialized');
+  }
   
   for (const event of events) {
     try {
       switch (event.eventType) {
         case 'Mint':
-          await processMintEvent(event);
+          await processMintEvent(event as MintEvent);
           break;
         case 'Fact':
-          await processFactEvent(event);
+          await processFactEvent(event as FactEvent);
           break;
         case 'Note':
-          await processNoteEvent(event);
+          await processNoteEvent(event as NoteEvent);
           break;
         case 'Gene':
-          await processGeneEvent(event);
+          await processGeneEvent(event as GeneEvent);
           break;
         case 'Transfer':
-          await processTransferEvent(event);
+          await processTransferEvent(event as TransferEvent);
           break;
-        // Other event types can be added as needed
       }
     } catch (error) {
       console.error(`Error processing ${event.eventType} event:`, error);
@@ -241,52 +267,4 @@ async function processTransferEvent(event: TransferEvent): Promise<void> {
       }
     }
   );
-}
-
-
-// Build full names for entries based on their hierarchy
-export async function buildFullNames() {
-  // Get all entries without full names
-  const entries = await HypermapEntryModel.find({ fullName: { $exists: false } });
-  
-  for (const entry of entries) {
-    await buildFullNameForEntry(entry.namehash);
-  }
-}
-
-// Build full name for a single entry
-async function buildFullNameForEntry(namehash: string): Promise<string> {
-  const entry = await HypermapEntryModel.findOne({ namehash });
-  
-  if (!entry) {
-    return '';
-  }
-  
-  // If fullName already exists, return it
-  if (entry.fullName) {
-    return entry.fullName;
-  }
-  
-  // If this is the root hash, it has no name
-  if (namehash === ROOT_HASH) {
-    await HypermapEntryModel.updateOne(
-      { namehash }, 
-      { $set: { fullName: '' } }
-    );
-    return '';
-  }
-  
-  // Get parent's full name
-  const parentFullName = await buildFullNameForEntry(entry.parentHash);
-  
-  // Build full name
-  const fullName = parentFullName ? `${parentFullName}/${entry.label}` : entry.label;
-  
-  // Update the entry
-  await HypermapEntryModel.updateOne(
-    { namehash }, 
-    { $set: { fullName } }
-  );
-  
-  return fullName;
 }
