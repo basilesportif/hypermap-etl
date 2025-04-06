@@ -18,10 +18,10 @@ export const HypermapEventSchema = new Schema({
   facthash: { type: String, sparse: true },
   notehash: { type: String, sparse: true },
   
-  // Common fields
-  labelhash: { type: String, sparse: true },
-  label: { type: String, sparse: true, index: true },
-  data: { type: String, sparse: true },
+  // Common fields - updated for bytes types
+  labelhash: { type: String, sparse: true, index: true }, // Now bytes (indexed)
+  label: { type: String, sparse: true, index: true },     // Now bytes, converted to string
+  data: { type: String, sparse: true },                   // Still bytes
   
   // Gene event fields
   entry: { type: String, sparse: true, index: true },
