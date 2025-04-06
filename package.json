@@ -7,10 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "scan-events": "node --loader ts-node/esm scripts/scan-events.ts",
-    "index-events": "node --loader ts-node/esm scripts/index-events.ts",
-    "extract-events": "node --loader ts-node/esm scripts/extract-events.ts",
-    "status": "node --loader ts-node/esm scripts/status.ts"
+    "scan-events": "tsx scripts/scan-events.ts",
+    "index-events": "tsx scripts/index-events.ts",
+    "extract-events": "tsx scripts/extract-events.ts",
+    "status": "tsx scripts/status.ts"
   },
   "type": "module",
   "dependencies": {
@@ -31,6 +31,7 @@
     "postcss": "latest",
     "tailwindcss": "latest",
     "ts-node": "^10.9.2",
+    "tsx": "latest",
     "typescript": "^5.8.3"
   }
 }
