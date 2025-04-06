@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "scan-events": "node --loader ts-node/esm scripts/scan-events.ts",
-    "index-events": "node --loader ts-node/esm scripts/index-events.ts"
+    "index-events": "node --loader ts-node/esm scripts/index-events.ts",
+    "extract-events": "node --loader ts-node/esm scripts/extract-events.ts"
   },
   "type": "module",
   "dependencies": {
