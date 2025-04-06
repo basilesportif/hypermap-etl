@@ -189,10 +189,10 @@ export default function Home() {
       <div className="w-full mx-auto">
         <h1 className="text-3xl font-bold mb-8 text-center">HyperMap ETL Dashboard</h1>
         
-        {/* Three-column layout for wider screens, stacking on smaller screens */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
+        {/* Fixed three-column layout by default */}
+        <div className="flex flex-col lg:flex-row gap-6 mb-8 min-h-[400px]">
           {/* Database Status Card */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="bg-white p-6 rounded-lg shadow-md flex-1">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Database Status</h2>
             
             {statusLoading ? (
@@ -234,7 +234,7 @@ export default function Home() {
           </div>
           
           {/* Events by Type Card */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="bg-white p-6 rounded-lg shadow-md flex-1">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Events by Type</h2>
             
             {statusLoading ? (
@@ -272,7 +272,7 @@ export default function Home() {
           </div>
           
           {/* Extract Events Card */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="bg-white p-6 rounded-lg shadow-md flex-1">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Extract Events</h2>
             
             <form 
