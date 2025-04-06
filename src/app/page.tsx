@@ -189,8 +189,8 @@ export default function Home() {
       <div className="w-full mx-auto">
         <h1 className="text-3xl font-bold mb-8 text-center">HyperMap ETL Dashboard</h1>
         
-        {/* Fixed three-column layout by default */}
-        <div className="flex flex-col lg:flex-row gap-6 mb-8 min-h-[400px]">
+        {/* Fixed three-column layout with a more aggressive breakpoint */}
+        <div className="flex flex-col md:flex-row gap-6 mb-8 min-h-[400px]">
           {/* Database Status Card */}
           <div className="bg-white p-6 rounded-lg shadow-md flex-1">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Database Status</h2>
