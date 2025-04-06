@@ -189,8 +189,9 @@ export default function Home() {
       <div className="max-w-6xl mx-auto">
         <h1 className="text-3xl font-bold mb-8">HyperMap ETL Dashboard</h1>
         
-        <div className="grid md:grid-cols-2 gap-6 mb-8">
-          {/* Status Card */}
+        {/* Three-column layout for wider screens, stacking on smaller screens */}
+        <div className="grid lg:grid-cols-3 md:grid-cols-2 gap-6 mb-8">
+          {/* Database Status Card */}
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Database Status</h2>
             
@@ -215,7 +216,7 @@ export default function Home() {
                   <p className="text-3xl font-bold text-blue-600">{statusData.events.total.toLocaleString()}</p>
                 </div>
                 
-                <div className="mb-6">
+                <div>
                   <p className="text-gray-600 text-sm">Last Block Processed</p>
                   <p className="text-2xl font-semibold">{statusData.processing.lastBlock.toLocaleString()}</p>
                   <p className="text-sm text-gray-500">
@@ -226,33 +227,47 @@ export default function Home() {
                       : 'Less than an hour ago'})
                   </p>
                 </div>
-                
-                <div>
-                  <p className="text-gray-600 text-sm mb-2">Events by Type</p>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="py-2 px-3 text-left">Type</th>
-                          <th className="py-2 px-3 text-right">Count</th>
-                          <th className="py-2 px-3 text-right">Percentage</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {statusData.events.byType.map((event, i) => (
-                          <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="py-1.5 px-3">{event.type}</td>
-                            <td className="py-1.5 px-3 text-right">{event.count.toLocaleString()}</td>
-                            <td className="py-1.5 px-3 text-right">{event.percentage}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
               </div>
             ) : (
               <p>No data available</p>
+            )}
+          </div>
+          
+          {/* Events by Type Card */}
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4 border-b pb-2">Events by Type</h2>
+            
+            {statusLoading ? (
+              <div className="flex justify-center items-center h-48">
+                <div className="animate-spin w-8 h-8 border-t-4 border-blue-500 border-solid rounded-full"></div>
+              </div>
+            ) : statusError ? (
+              <div className="text-red-500 p-4 border border-red-200 rounded bg-red-50">
+                {statusError}
+              </div>
+            ) : statusData && statusData.events.byType.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="py-2 px-3 text-left">Type</th>
+                      <th className="py-2 px-3 text-right">Count</th>
+                      <th className="py-2 px-3 text-right">Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statusData.events.byType.map((event, i) => (
+                      <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="py-1.5 px-3">{event.type}</td>
+                        <td className="py-1.5 px-3 text-right">{event.count.toLocaleString()}</td>
+                        <td className="py-1.5 px-3 text-right">{event.percentage}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p>No event data available</p>
             )}
           </div>
           
@@ -301,9 +316,9 @@ export default function Home() {
               </button>
             </form>
             
-            {/* Progress Display */}
+            {/* Progress indicators (only show when extraction is active) */}
             {extractionStatus.status !== 'idle' && (
-              <div className="mt-4">
+              <div>
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-medium">
                     Status: <span className={
@@ -338,20 +353,22 @@ export default function Home() {
                     <p className="text-sm text-green-600">New events: {extractionStatus.events.newInChunk}</p>
                   </div>
                 )}
-                
-                {/* Log Messages */}
-                <div className="mt-4">
-                  <p className="font-medium mb-2">Log:</p>
-                  <div className="bg-gray-800 text-gray-100 p-3 rounded-md text-xs font-mono h-32 overflow-y-auto">
-                    {extractionStatus.logs.map((log, i) => (
-                      <div key={i}>{log}</div>
-                    ))}
-                  </div>
-                </div>
               </div>
             )}
           </div>
         </div>
+        
+        {/* Log Messages - Always shown as full width below the cards */}
+        {extractionStatus.status !== 'idle' && (
+          <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+            <p className="font-medium mb-2">Extraction Log:</p>
+            <div className="bg-gray-800 text-gray-100 p-3 rounded-md text-xs font-mono h-48 overflow-y-auto">
+              {extractionStatus.logs.map((log, i) => (
+                <div key={i}>{log}</div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
