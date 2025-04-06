@@ -188,7 +188,7 @@ async function extractEvents() {
   console.log(`Scanning ${blockCount.toLocaleString()} blocks`);
   
   // Define chunk size and rate limiting parameters
-  const CHUNK_SIZE = 5000; // Reduce to 5k blocks for fewer rate limits
+  const CHUNK_SIZE = 20000; // Process 20k blocks at a time
   const DEFAULT_DELAY = 2000; // Increase default delay to 2 seconds
   const MAX_RETRIES = 5;
   const BASE_RETRY_DELAY = 3000; // 3 seconds for exponential backoff
