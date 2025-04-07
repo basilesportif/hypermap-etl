@@ -75,6 +75,21 @@ export type HypermapEvent =
   | ZeroEvent 
   | UpgradedEvent;
 
+// Interface for getEvents server action parameters
+export interface GetEventsParams {
+  page?: number;        // Page number (default: 1)
+  limit?: number;       // Items per page (default: 20)
+  type?: string;        // Event type filter (e.g., 'Mint', 'Fact')
+  startDate?: string;   // Start date filter (format: 'YYYY-MM-DD')
+  // Future filters can be added here (e.g., endDate, block range)
+}
+
+// Interface for getEvents server action response
+export interface GetEventsResponse {
+  events: HypermapEvent[]; // Array of events for the requested page
+  totalCount: number;    // Total number of events matching the filters
+}
+
 // Hypermap Entry type
 export interface HypermapEntry {
   namehash: Bytes32;               // bytes32 - entry identifier
