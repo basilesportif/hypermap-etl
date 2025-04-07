@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { getEvents } from './actions';
 import { HypermapEvent, GetEventsParams } from '../../types';
 import Link from 'next/link';
+import { ethers } from 'ethers';
 
 // Define constants
 const EVENTS_PER_PAGE = 20;
@@ -21,9 +22,10 @@ function formatTimestamp(timestamp?: number): string {
 /**
  * Helper to display shortened hash values
  */
-function shortenHash(hash: string): string {
+function shortenHash(hash: string | number | bigint): string {
   if (!hash) return '';
-  return `${hash.substring(0, 6)}...${hash.substring(hash.length - 4)}`;
+  const hashStr = String(hash);
+  return `${hashStr.substring(0, 6)}...${hashStr.substring(hashStr.length - 4)}`;
 }
 
 /**
@@ -41,6 +43,31 @@ function EventsContent() {
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
+  
+  /**
+   * Helper function for decoding event data based on label
+   */
+  function decodeEventData(label: string, data: string): string | number | JSX.Element {
+    if (!data || data === '0x' || data === '') return <span className="text-gray-400">N/A</span>;
+
+    try {
+      if (label === '~ip' || label === '~port') {
+        const value = ethers.toBigInt(data);
+        if (value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(Number.MIN_SAFE_INTEGER)) {
+          return Number(value);
+        } else {
+          return value.toString();
+        }
+      } else if (label === '~net-key' || label === '~routers') {
+        return <code title={String(data)}>{shortenHash(data)}</code>;
+      } else {
+        return ethers.toUtf8String(data);
+      }
+    } catch (e) {
+      console.error(`Error decoding data for label "${label}" (data: ${data}):`, e);
+      return <span className="text-red-500" title={`Error decoding raw data: ${data}`}>Invalid Data ({shortenHash(data)})</span>;
+    }
+  }
 
   // Effect to initialize state from URL params
   useEffect(() => {
@@ -206,14 +233,13 @@ function EventsContent() {
                   <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Block #</th>
                   <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Timestamp</th>
                   <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Tx Hash</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Label</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Parent Hash</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Details</th>
                 </tr>
               </thead>
               <tbody>
                 {events.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-4 px-6 text-center text-gray-500">
+                    <td colSpan={5} className="py-4 px-6 text-center text-gray-500">
                       No events found matching the current filters.
                     </td>
                   </tr>
@@ -241,14 +267,57 @@ function EventsContent() {
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline"
                         >
-                          {shortenHash(event.transactionHash)}
+                          <code title={String(event.transactionHash)}>{shortenHash(event.transactionHash)}</code>
                         </a>
                       </td>
-                      <td className="py-3 px-4 border-b">
-                        {'label' in event ? event.label : ''}
-                      </td>
-                      <td className="py-3 px-4 border-b">
-                        {'parenthash' in event ? shortenHash(event.parenthash) : ''}
+                      <td className="py-3 px-4 border-b text-xs align-top">
+                        <div className="space-y-1">
+                          {event.eventType === 'Mint' && (
+                            <>
+                              <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
+                              <div><strong>Child:</strong> <code title={String(event.childhash)}>{shortenHash(event.childhash)}</code></div>
+                              <div><strong>Label:</strong> {event.label || <span className="text-gray-400">N/A</span>}</div>
+                              <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
+                            </>
+                          )}
+                          {event.eventType === 'Fact' && (
+                            <>
+                              <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
+                              <div><strong>FactHash:</strong> <code title={String(event.facthash)}>{shortenHash(event.facthash)}</code></div>
+                              <div><strong>Label:</strong> {event.label || <span className="text-gray-400">N/A</span>}</div>
+                              <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
+                              <div><strong>Data:</strong> {decodeEventData(event.label, event.data)}</div>
+                            </>
+                          )}
+                          {event.eventType === 'Note' && (
+                            <>
+                              <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
+                              <div><strong>NoteHash:</strong> <code title={String(event.notehash)}>{shortenHash(event.notehash)}</code></div>
+                              <div><strong>Label:</strong> {event.label || <span className="text-gray-400">N/A</span>}</div>
+                              <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
+                              <div><strong>Data:</strong> {decodeEventData(event.label, event.data)}</div>
+                            </>
+                          )}
+                          {event.eventType === 'Gene' && (
+                            <>
+                              <div><strong>Entry:</strong> <code title={String(event.entry)}>{shortenHash(event.entry)}</code></div>
+                              <div><strong>Gene Addr:</strong> <code title={String(event.gene)}>{shortenHash(event.gene)}</code></div>
+                            </>
+                          )}
+                          {event.eventType === 'Transfer' && (
+                            <>
+                              <div><strong>From:</strong> <code title={String(event.from)}>{shortenHash(event.from)}</code></div>
+                              <div><strong>To:</strong> <code title={String(event.to)}>{shortenHash(event.to)}</code></div>
+                              <div><strong>ID:</strong> <code title={String(event.id)}>{String(event.id).length > 12 ? shortenHash(event.id) : String(event.id)}</code></div>
+                            </>
+                          )}
+                          {event.eventType === 'Zero' && (
+                            <div><strong>Zero TBA:</strong> <code title={String(event.zeroTba)}>{shortenHash(event.zeroTba)}</code></div>
+                          )}
+                          {event.eventType === 'Upgraded' && (
+                            <div><strong>New Impl:</strong> <code title={String(event.implementation)}>{shortenHash(event.implementation)}</code></div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
