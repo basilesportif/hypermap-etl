@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense, Fragment } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getEvents } from './actions';
 import { HypermapEvent, GetEventsParams } from '../../types';
 import Link from 'next/link';
 import { ethers } from 'ethers';
+import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/solid';
 
 // Define constants
 const EVENTS_PER_PAGE = 20;
@@ -43,6 +44,7 @@ function EventsContent() {
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   
   /**
    * Helper function for decoding event data based on label
@@ -140,6 +142,14 @@ function EventsContent() {
   };
 
   const totalPages = Math.ceil(totalEvents / EVENTS_PER_PAGE);
+  
+  // Toggle function for expanding/collapsing rows
+  const toggleRow = (eventId: string) => {
+    setExpandedRows(prev => ({
+      ...prev,
+      [eventId]: !prev[eventId]
+    }));
+  };
 
   return (
     <div className="p-6">
@@ -230,10 +240,10 @@ function EventsContent() {
               <thead className="bg-gray-100">
                 <tr>
                   <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Type</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Block #</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Timestamp</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Tx Hash</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Details</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Label</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Data</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium text-gray-600">Block</th>
+                  <th className="py-3 px-4 text-center text-sm font-medium text-gray-600"></th>
                 </tr>
               </thead>
               <tbody>
@@ -244,83 +254,111 @@ function EventsContent() {
                     </td>
                   </tr>
                 ) : (
-                  events.map((event, index) => (
-                    <tr 
-                      key={`${event.transactionHash}_${event.logIndex}`}
-                      className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
-                    >
-                      <td className="py-3 px-4 border-b">
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                          {event.eventType}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 border-b">
-                        {event.blockNumber.toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4 border-b">
-                        {formatTimestamp(event.timestamp)}
-                      </td>
-                      <td className="py-3 px-4 border-b">
-                        <a 
-                          href={`https://basescan.org/tx/${event.transactionHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          <code title={String(event.transactionHash)}>{shortenHash(event.transactionHash)}</code>
-                        </a>
-                      </td>
-                      <td className="py-3 px-4 border-b text-xs align-top">
-                        <div className="space-y-1">
-                          {event.eventType === 'Mint' && (
-                            <>
-                              <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
-                              <div><strong>Child:</strong> <code title={String(event.childhash)}>{shortenHash(event.childhash)}</code></div>
-                              <div><strong>Label:</strong> {event.label || <span className="text-gray-400">N/A</span>}</div>
-                              <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
-                            </>
-                          )}
-                          {event.eventType === 'Fact' && (
-                            <>
-                              <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
-                              <div><strong>FactHash:</strong> <code title={String(event.facthash)}>{shortenHash(event.facthash)}</code></div>
-                              <div><strong>Label:</strong> {event.label || <span className="text-gray-400">N/A</span>}</div>
-                              <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
-                              <div><strong>Data:</strong> {decodeEventData(event.label, event.data)}</div>
-                            </>
-                          )}
-                          {event.eventType === 'Note' && (
-                            <>
-                              <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
-                              <div><strong>NoteHash:</strong> <code title={String(event.notehash)}>{shortenHash(event.notehash)}</code></div>
-                              <div><strong>Label:</strong> {event.label || <span className="text-gray-400">N/A</span>}</div>
-                              <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
-                              <div><strong>Data:</strong> {decodeEventData(event.label, event.data)}</div>
-                            </>
-                          )}
-                          {event.eventType === 'Gene' && (
-                            <>
-                              <div><strong>Entry:</strong> <code title={String(event.entry)}>{shortenHash(event.entry)}</code></div>
-                              <div><strong>Gene Addr:</strong> <code title={String(event.gene)}>{shortenHash(event.gene)}</code></div>
-                            </>
-                          )}
-                          {event.eventType === 'Transfer' && (
-                            <>
-                              <div><strong>From:</strong> <code title={String(event.from)}>{shortenHash(event.from)}</code></div>
-                              <div><strong>To:</strong> <code title={String(event.to)}>{shortenHash(event.to)}</code></div>
-                              <div><strong>ID:</strong> <code title={String(event.id)}>{String(event.id).length > 12 ? shortenHash(event.id) : String(event.id)}</code></div>
-                            </>
-                          )}
-                          {event.eventType === 'Zero' && (
-                            <div><strong>Zero TBA:</strong> <code title={String(event.zeroTba)}>{shortenHash(event.zeroTba)}</code></div>
-                          )}
-                          {event.eventType === 'Upgraded' && (
-                            <div><strong>New Impl:</strong> <code title={String(event.implementation)}>{shortenHash(event.implementation)}</code></div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                  events.map((event, index) => {
+                    const eventId = `${event.transactionHash}_${event.logIndex}`;
+                    const isExpanded = expandedRows[eventId] || false;
+                    
+                    return (
+                      <Fragment key={eventId}>
+                        {/* Main Row */}
+                        <tr className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="py-3 px-4 border-b">
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                              {event.eventType}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 border-b">
+                            {event.label || <span className="text-gray-400">N/A</span>}
+                          </td>
+                          <td className="py-3 px-4 border-b">
+                            {(event.eventType === 'Fact' || event.eventType === 'Note') 
+                              ? decodeEventData(event.label, event.data)
+                              : <span className="text-gray-400">N/A</span>
+                            }
+                          </td>
+                          <td className="py-3 px-4 border-b">
+                            {event.blockNumber.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 border-b text-center">
+                            <button 
+                              onClick={() => toggleRow(eventId)} 
+                              className="p-1 rounded hover:bg-gray-200"
+                              aria-label={isExpanded ? "Collapse details" : "Expand details"}
+                            >
+                              {isExpanded 
+                                ? <ChevronUpIcon className="h-4 w-4" /> 
+                                : <ChevronDownIcon className="h-4 w-4" />
+                              }
+                            </button>
+                          </td>
+                        </tr>
+                        
+                        {/* Details Row (Conditional) */}
+                        {isExpanded && (
+                          <tr className="bg-gray-100">
+                            <td colSpan={5} className="py-3 px-6 border-b text-xs">
+                              <div className="space-y-1">
+                                <div><strong>Timestamp:</strong> {formatTimestamp(event.timestamp)}</div>
+                                <div>
+                                  <strong>Tx Hash:</strong>{' '}
+                                  <a 
+                                    href={`https://basescan.org/tx/${event.transactionHash}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline"
+                                  >
+                                    <code title={String(event.transactionHash)}>{shortenHash(event.transactionHash)}</code>
+                                  </a>
+                                </div>
+                                
+                                {/* Event-specific details */}
+                                {event.eventType === 'Mint' && (
+                                  <>
+                                    <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
+                                    <div><strong>Child:</strong> <code title={String(event.childhash)}>{shortenHash(event.childhash)}</code></div>
+                                    <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
+                                  </>
+                                )}
+                                {event.eventType === 'Fact' && (
+                                  <>
+                                    <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
+                                    <div><strong>FactHash:</strong> <code title={String(event.facthash)}>{shortenHash(event.facthash)}</code></div>
+                                    <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
+                                  </>
+                                )}
+                                {event.eventType === 'Note' && (
+                                  <>
+                                    <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
+                                    <div><strong>NoteHash:</strong> <code title={String(event.notehash)}>{shortenHash(event.notehash)}</code></div>
+                                    <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
+                                  </>
+                                )}
+                                {event.eventType === 'Gene' && (
+                                  <>
+                                    <div><strong>Entry:</strong> <code title={String(event.entry)}>{shortenHash(event.entry)}</code></div>
+                                    <div><strong>Gene Addr:</strong> <code title={String(event.gene)}>{shortenHash(event.gene)}</code></div>
+                                  </>
+                                )}
+                                {event.eventType === 'Transfer' && (
+                                  <>
+                                    <div><strong>From:</strong> <code title={String(event.from)}>{shortenHash(event.from)}</code></div>
+                                    <div><strong>To:</strong> <code title={String(event.to)}>{shortenHash(event.to)}</code></div>
+                                    <div><strong>ID:</strong> <code title={String(event.id)}>{String(event.id).length > 12 ? shortenHash(event.id) : String(event.id)}</code></div>
+                                  </>
+                                )}
+                                {event.eventType === 'Zero' && (
+                                  <div><strong>Zero TBA:</strong> <code title={String(event.zeroTba)}>{shortenHash(event.zeroTba)}</code></div>
+                                )}
+                                {event.eventType === 'Upgraded' && (
+                                  <div><strong>New Impl:</strong> <code title={String(event.implementation)}>{shortenHash(event.implementation)}</code></div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
