@@ -186,13 +186,13 @@ export default function Home() {
   
   return (
     <main className="min-h-screen p-6 bg-gray-50">
-      <div className="w-full mx-auto">
+      <div className="w-full max-w-[1200px] mx-auto">
         <h1 className="text-3xl font-bold mb-8 text-center">HyperMap ETL Dashboard</h1>
         
-        {/* Fixed three-column layout with a more aggressive breakpoint */}
-        <div className="flex flex-col md:flex-row gap-6 mb-8 min-h-[400px]">
+        {/* Using custom CSS class with media query */}
+        <div className="cards-container">
           {/* Database Status Card */}
-          <div className="bg-white p-6 rounded-lg shadow-md flex-1">
+          <div className="bg-white p-6 rounded-lg shadow-md flex-1 basis-0 min-w-0">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Database Status</h2>
             
             {statusLoading ? (
@@ -234,7 +234,7 @@ export default function Home() {
           </div>
           
           {/* Events by Type Card */}
-          <div className="bg-white p-6 rounded-lg shadow-md flex-1">
+          <div className="bg-white p-6 rounded-lg shadow-md flex-1 basis-0 min-w-0">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Events by Type</h2>
             
             {statusLoading ? (
@@ -272,7 +272,7 @@ export default function Home() {
           </div>
           
           {/* Extract Events Card */}
-          <div className="bg-white p-6 rounded-lg shadow-md flex-1">
+          <div className="bg-white p-6 rounded-lg shadow-md flex-1 basis-0 min-w-0">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Extract Events</h2>
             
             <form 
