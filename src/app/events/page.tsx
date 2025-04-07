@@ -51,7 +51,7 @@ function EventsContent() {
     if (!data || data === '0x' || data === '') return <span className="text-gray-400">N/A</span>;
 
     try {
-      if (label === '~ip' || label === '~port') {
+      if (label === '~ip' || label === '~port' || label === '~tcp-port' || label === '~ws-port') {
         const value = ethers.toBigInt(data);
         if (value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(Number.MIN_SAFE_INTEGER)) {
           return Number(value);
