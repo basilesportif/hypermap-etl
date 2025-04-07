@@ -27,7 +27,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { getStatus, extractEvents } from './actions'; // Assuming actions.ts exports these
+import { getStatus, extractEvents } from './actions'; // From actions.ts
 
 /**
  * @interface StatusData
@@ -171,18 +171,18 @@ export default function Home() {
 
     // Validate end block input if provided
     if (endBlock) {
-        if (isNaN(parseInt(endBlock)) || parseInt(endBlock) < 0) {
-            addLog('Error: End block must be a valid number.');
-            setExtractionStatus(prev => ({ ...prev, status: 'error', message: 'Invalid end block.' }));
-            return;
-        }
-        const parsedEndBlock = parseInt(endBlock);
-        if (parsedEndBlock < fromBlock) {
-            addLog('Error: End block cannot be earlier than start block.');
-            setExtractionStatus(prev => ({ ...prev, status: 'error', message: 'End block < Start block.' }));
-            return;
-        }
-        toBlock = parsedEndBlock;
+      if (isNaN(parseInt(endBlock)) || parseInt(endBlock) < 0) {
+        addLog('Error: End block must be a valid number.');
+        setExtractionStatus(prev => ({ ...prev, status: 'error', message: 'Invalid end block.' }));
+        return;
+      }
+      const parsedEndBlock = parseInt(endBlock);
+      if (parsedEndBlock < fromBlock) {
+        addLog('Error: End block cannot be earlier than start block.');
+        setExtractionStatus(prev => ({ ...prev, status: 'error', message: 'End block < Start block.' }));
+        return;
+      }
+      toBlock = parsedEndBlock;
     }
 
 
@@ -201,10 +201,10 @@ export default function Home() {
     });
 
     try {
-        // Initiate the recursive extraction process
+      // Initiate the recursive extraction process
       await runExtraction(fromBlock, toBlock);
     } catch (error) {
-        // Catch errors that might bubble up from runExtraction (though it should handle its own errors)
+      // Catch errors that might bubble up from runExtraction (though it should handle its own errors)
       console.error('Extraction initiation error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       addLog(`FATAL ERROR during extraction: ${errorMessage}`);
@@ -243,12 +243,12 @@ export default function Home() {
         message: result.message, // Message from the server action
         // Update progress details from the server action result
         progress: result.progress ? {
-            // Keep the original fromBlock and toBlock from the initial request
-            fromBlock: prev.progress?.fromBlock ?? result.progress.fromBlock,
-            toBlock: prev.progress?.toBlock ?? result.progress.toBlock,
-            currentBlock: result.progress.currentBlock,
-            completion: result.progress.completion
-          } : prev.progress, // Fallback to previous progress if none provided
+          // Keep the original fromBlock and toBlock from the initial request
+          fromBlock: prev.progress?.fromBlock ?? result.progress.fromBlock,
+          toBlock: prev.progress?.toBlock ?? result.progress.toBlock,
+          currentBlock: result.progress.currentBlock,
+          completion: result.progress.completion
+        } : prev.progress, // Fallback to previous progress if none provided
         events: result.events, // Event stats for the processed chunk
         error: result.error // Error details if any
       }));
@@ -258,16 +258,16 @@ export default function Home() {
       if (result.events && result.events.newInChunk > 0) {
         addLog(`-> Stored ${result.events.newInChunk} new events from this chunk.`);
       } else if (result.events && result.events.total > 0 && result.events.newInChunk === 0) {
-          addLog(`-> Found ${result.events.total} events in this chunk (already stored).`);
+        addLog(`-> Found ${result.events.total} events in this chunk (already stored).`);
       } else if (result.events && result.events.total === 0) {
-          addLog(`-> No events found in this chunk.`);
+        addLog(`-> No events found in this chunk.`);
       }
 
       // Handle errors reported by the server action
       if (result.status === 'error') {
-          addLog(`ERROR reported by server: ${result.error || 'Unknown error'}`);
-          // Stop further processing
-          return;
+        addLog(`ERROR reported by server: ${result.error || 'Unknown error'}`);
+        // Stop further processing
+        return;
       }
 
       // If the server indicates there's a next chunk to process, continue recursively
@@ -284,10 +284,10 @@ export default function Home() {
       } else {
         // No nextStartBlock means the process completed (or stopped due to an error handled above)
         if (result.status === 'completed') {
-             addLog('Extraction process completed successfully!');
+          addLog('Extraction process completed successfully!');
         } else {
-            // This case should ideally not be reached if errors are handled correctly above
-            addLog('Extraction process finished, but status is not "completed". Check logs.');
+          // This case should ideally not be reached if errors are handled correctly above
+          addLog('Extraction process finished, but status is not "completed". Check logs.');
         }
         // Final status refresh after completion
         await fetchStatusData();
@@ -299,10 +299,10 @@ export default function Home() {
       addLog(`CLIENT ERROR processing chunk: ${errorMessage}`);
       // Update status to reflect client-side error and stop
       setExtractionStatus(prev => ({
-          ...prev,
-          status: 'error',
-          message: `Client-side error: ${errorMessage}`,
-          error: errorMessage
+        ...prev,
+        status: 'error',
+        message: `Client-side error: ${errorMessage}`,
+        error: errorMessage
       }));
       // Optionally re-throw if needed, but usually better to just update state and log
       // throw error;
@@ -359,15 +359,15 @@ export default function Home() {
                   <p className="text-gray-600 text-sm">Last Block Processed (DB)</p>
                   <p className="text-2xl font-semibold">{statusData.processing.lastBlock.toLocaleString()}</p>
                   {statusData.processing.lastBlock > 0 && (
-                     <p className="text-xs text-gray-500">
-                       {new Date(statusData.processing.lastBlockTime).toLocaleString()}
-                       {' ('}
-                       {statusData.processing.hoursAgo > 0
-                         ? `${statusData.processing.hoursAgo} hours ago`
-                         : 'Less than an hour ago'}
-                       {')'}
+                    <p className="text-xs text-gray-500">
+                      {new Date(statusData.processing.lastBlockTime).toLocaleString()}
+                      {' ('}
+                      {statusData.processing.hoursAgo > 0
+                        ? `${statusData.processing.hoursAgo} hours ago`
+                        : 'Less than an hour ago'}
+                      {')'}
                     </p>
-                   )}
+                  )}
 
                 </div>
 
@@ -375,24 +375,24 @@ export default function Home() {
                 <div>
                   <p className="text-gray-600 text-sm">Latest Block (Base Chain)</p>
                   <p className="text-2xl font-semibold">
-                     {statusData.processing.latestBlockNumber > 0
-                         ? statusData.processing.latestBlockNumber.toLocaleString()
-                         : <span className="text-orange-500 text-lg">Unavailable</span>
-                     }
+                    {statusData.processing.latestBlockNumber > 0
+                      ? statusData.processing.latestBlockNumber.toLocaleString()
+                      : <span className="text-orange-500 text-lg">Unavailable</span>
+                    }
                   </p>
-                   {/* Show sync status */}
-                   {statusData.processing.latestBlockNumber > 0 && statusData.processing.lastBlock > 0 && (
-                       <p className={`text-xs ${statusData.processing.latestBlockNumber - statusData.processing.lastBlock < 10 ? 'text-green-600' : 'text-orange-600'}`}>
-                           {statusData.processing.latestBlockNumber - statusData.processing.lastBlock <= 0
-                               ? 'Fully Synced'
-                               : `${(statusData.processing.latestBlockNumber - statusData.processing.lastBlock).toLocaleString()} blocks behind`
-                           }
-                       </p>
-                   )}
+                  {/* Show sync status */}
+                  {statusData.processing.latestBlockNumber > 0 && statusData.processing.lastBlock > 0 && (
+                    <p className={`text-xs ${statusData.processing.latestBlockNumber - statusData.processing.lastBlock < 10 ? 'text-green-600' : 'text-orange-600'}`}>
+                      {statusData.processing.latestBlockNumber - statusData.processing.lastBlock <= 0
+                        ? 'Fully Synced'
+                        : `${(statusData.processing.latestBlockNumber - statusData.processing.lastBlock).toLocaleString()} blocks behind`
+                      }
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (
-                // No Data State
+              // No Data State
               <p>No status data available.</p>
             )}
           </div>
@@ -401,40 +401,40 @@ export default function Home() {
           <div className="bg-white p-6 rounded-lg shadow-md flex-1 basis-0 min-w-0">
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Events by Type (DB)</h2>
             {statusLoading ? (
-                 <div className="flex justify-center items-center h-48">
-                   <div className="animate-spin w-8 h-8 border-t-4 border-blue-500 border-solid rounded-full" role="status">
-                        <span className="sr-only">Loading event types...</span>
-                     </div>
-                 </div>
+              <div className="flex justify-center items-center h-48">
+                <div className="animate-spin w-8 h-8 border-t-4 border-blue-500 border-solid rounded-full" role="status">
+                  <span className="sr-only">Loading event types...</span>
+                </div>
+              </div>
             ) : statusError ? (
-                 <div className="text-red-500 p-4 border border-red-200 rounded bg-red-50">
-                   {statusError}
-                 </div>
-             ) : statusData && statusData.events.byType.length > 0 ? (
-                 <div className="overflow-x-auto">
-                   <table className="min-w-full text-sm">
-                     <thead>
-                       <tr className="bg-gray-100 text-left text-gray-600">
-                         <th className="py-2 px-3 font-medium">Type</th>
-                         <th className="py-2 px-3 text-right font-medium">Count</th>
-                         <th className="py-2 px-3 text-right font-medium">%</th>
-                       </tr>
-                     </thead>
-                     <tbody>
-                       {statusData.events.byType.map((event, i) => (
-                         <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors duration-150`}>
-                           <td className="py-1.5 px-3">
-                             <Link href={`/events?type=${event.type}`} className="text-blue-600 hover:underline font-medium">
-                               {event.type}
-                             </Link>
-                           </td>
-                           <td className="py-1.5 px-3 text-right">{event.count.toLocaleString()}</td>
-                           <td className="py-1.5 px-3 text-right">{event.percentage}%</td>
-                         </tr>
-                       ))}
-                     </tbody>
-                   </table>
-                 </div>
+              <div className="text-red-500 p-4 border border-red-200 rounded bg-red-50">
+                {statusError}
+              </div>
+            ) : statusData && statusData.events.byType.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-100 text-left text-gray-600">
+                      <th className="py-2 px-3 font-medium">Type</th>
+                      <th className="py-2 px-3 text-right font-medium">Count</th>
+                      <th className="py-2 px-3 text-right font-medium">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statusData.events.byType.map((event, i) => (
+                      <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors duration-150`}>
+                        <td className="py-1.5 px-3">
+                          <Link href={`/events?type=${event.type}`} className="text-blue-600 hover:underline font-medium">
+                            {event.type}
+                          </Link>
+                        </td>
+                        <td className="py-1.5 px-3 text-right">{event.count.toLocaleString()}</td>
+                        <td className="py-1.5 px-3 text-right">{event.percentage}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <p>No event data available in the database.</p>
             )}
@@ -483,7 +483,7 @@ export default function Home() {
                     aria-describedby="end-block-desc"
                     disabled={extractionStatus.status === 'running'}
                   />
-                   <p id="end-block-desc" className="mt-1 text-xs text-gray-500">Leave blank for 'latest'.</p>
+                  <p id="end-block-desc" className="mt-1 text-xs text-gray-500">Leave blank for &apos;latest&apos;.</p>
                 </div>
               </div>
 
@@ -493,13 +493,13 @@ export default function Home() {
                 className="w-full bg-blue-600 text-white py-2 px-4 rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300 disabled:cursor-not-allowed transition duration-150 ease-in-out"
               >
                 {extractionStatus.status === 'running' ? (
-                   <div className="flex items-center justify-center">
-                     <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                       </svg>
-                     <span>Extraction Running...</span>
-                   </div>
+                  <div className="flex items-center justify-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Extraction Running...</span>
+                  </div>
                 ) : 'Extract Events'}
               </button>
             </form>
@@ -509,52 +509,50 @@ export default function Home() {
               <div aria-live="polite">
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-sm font-medium">
-                    Status: <span className={`font-semibold ${
-                         extractionStatus.status === 'running' ? 'text-blue-600' :
-                         extractionStatus.status === 'completed' ? 'text-green-600' :
-                         extractionStatus.status === 'error' ? 'text-red-600' : 'text-gray-700'
+                    Status: <span className={`font-semibold ${extractionStatus.status === 'running' ? 'text-blue-600' :
+                      extractionStatus.status === 'completed' ? 'text-green-600' :
+                        extractionStatus.status === 'error' ? 'text-red-600' : 'text-gray-700'
                       }`}>
                       {extractionStatus.status.charAt(0).toUpperCase() + extractionStatus.status.slice(1)}
                     </span>
                   </p>
                   {extractionStatus.progress && (
-                     <p className="text-sm text-gray-600">
-                       {extractionStatus.progress.completion}% Complete
-                     </p>
-                   )}
+                    <p className="text-sm text-gray-600">
+                      {extractionStatus.progress.completion}% Complete
+                    </p>
+                  )}
                 </div>
 
                 {/* Progress Bar */}
                 {extractionStatus.progress && (
                   <div className="w-full bg-gray-200 rounded-full h-2.5 mb-3 overflow-hidden">
                     <div
-                      className={`h-2.5 rounded-full transition-all duration-300 ease-out ${
-                           extractionStatus.status === 'error' ? 'bg-red-500' :
-                           extractionStatus.status === 'completed' ? 'bg-green-500' : 'bg-blue-600'
-                       }`}
+                      className={`h-2.5 rounded-full transition-all duration-300 ease-out ${extractionStatus.status === 'error' ? 'bg-red-500' :
+                        extractionStatus.status === 'completed' ? 'bg-green-500' : 'bg-blue-600'
+                        }`}
                       style={{ width: `${Math.min(100, extractionStatus.progress.completion)}%` }}
                       role="progressbar"
                       aria-valuenow={extractionStatus.progress.completion}
-                      aria-valuemin="0"
-                      aria-valuemax="100"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
                       aria-label="Extraction progress"
                     ></div>
                   </div>
                 )}
 
-                 {/* Progress Details */}
-                 {extractionStatus.progress && (
-                     <p className="text-xs text-gray-500 mb-3">
-                       Processing Block: {extractionStatus.progress.currentBlock.toLocaleString()}
-                        (Target: {extractionStatus.progress.toBlock > 0 ? extractionStatus.progress.toBlock.toLocaleString() : 'latest'})
-                     </p>
-                 )}
+                {/* Progress Details */}
+                {extractionStatus.progress && (
+                  <p className="text-xs text-gray-500 mb-3">
+                    Processing Block: {extractionStatus.progress.currentBlock.toLocaleString()}
+                    (Target: {extractionStatus.progress.toBlock > 0 ? extractionStatus.progress.toBlock.toLocaleString() : 'latest'})
+                  </p>
+                )}
 
 
                 {/* Event Stats for Current/Last Chunk */}
                 {extractionStatus.events && (
                   <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-md text-xs">
-                      <p className="font-medium mb-1">Last Chunk Stats ({extractionStatus.progress?.fromBlock.toLocaleString()} - {extractionStatus.progress?.currentBlock.toLocaleString()}):</p>
+                    <p className="font-medium mb-1">Last Chunk Stats ({extractionStatus.progress?.fromBlock.toLocaleString()} - {extractionStatus.progress?.currentBlock.toLocaleString()}):</p>
                     <p>Events Found: <span className="font-semibold">{extractionStatus.events.total.toLocaleString()}</span></p>
                     <p>New Events Stored: <span className="font-semibold text-green-700">{extractionStatus.events.newInChunk.toLocaleString()}</span></p>
                     {/* Optionally show breakdown by type for the chunk */}
@@ -562,13 +560,13 @@ export default function Home() {
                   </div>
                 )}
 
-                 {/* Display Error Message */}
-                 {extractionStatus.status === 'error' && extractionStatus.error && (
-                     <div className="text-red-600 p-3 border border-red-200 rounded bg-red-50 text-xs">
-                         <p className="font-medium">Error:</p>
-                         <p>{extractionStatus.error}</p>
-                     </div>
-                 )}
+                {/* Display Error Message */}
+                {extractionStatus.status === 'error' && extractionStatus.error && (
+                  <div className="text-red-600 p-3 border border-red-200 rounded bg-red-50 text-xs">
+                    <p className="font-medium">Error:</p>
+                    <p>{extractionStatus.error}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -585,7 +583,7 @@ export default function Home() {
               aria-live="polite" // Announce log updates
             >
               {extractionStatus.logs.length === 0 ? (
-                 <p className="text-gray-400 italic">Log is empty.</p>
+                <p className="text-gray-400 italic">Log is empty.</p>
               ) : (
                 extractionStatus.logs.map((log, i) => (
                   // Use index as key is acceptable here as logs are append-only

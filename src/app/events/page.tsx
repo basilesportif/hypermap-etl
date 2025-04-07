@@ -6,7 +6,6 @@ import { getEvents } from './actions';
 import { HypermapEvent, GetEventsParams } from '../../types';
 import Link from 'next/link';
 import { ethers } from 'ethers';
-import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/solid';
 
 // Define constants
 const EVENTS_PER_PAGE = 20;
@@ -32,6 +31,19 @@ function shortenHash(hash: string | number | bigint): string {
 /**
  * Main Events page content component
  */
+// Simple chevron icons as components
+const ChevronDownIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+  </svg>
+);
+
+const ChevronUpIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+  </svg>
+);
+
 function EventsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -49,7 +61,7 @@ function EventsContent() {
   /**
    * Helper function for decoding event data based on label
    */
-  function decodeEventData(label: string, data: string): string | number | JSX.Element {
+  function decodeEventData(label: string, data: string, truncate: boolean = false): string | number | JSX.Element {
     if (!data || data === '0x' || data === '') return <span className="text-gray-400">N/A</span>;
 
     try {
@@ -63,10 +75,17 @@ function EventsContent() {
       } else if (label === '~net-key' || label === '~routers') {
         return <code title={String(data)}>{shortenHash(data)}</code>;
       } else {
-        return ethers.toUtf8String(data);
+        const decoded = ethers.toUtf8String(data);
+        if (truncate && decoded.length > 20) {
+          return <span title={decoded}>{decoded.substring(0, 20)}...</span>;
+        }
+        return decoded;
       }
     } catch (e) {
       console.error(`Error decoding data for label "${label}" (data: ${data}):`, e);
+      if (truncate) {
+        return <span className="text-red-500" title={`Error decoding raw data: ${data}`}>Invalid...</span>;
+      }
       return <span className="text-red-500" title={`Error decoding raw data: ${data}`}>Invalid Data ({shortenHash(data)})</span>;
     }
   }
@@ -267,12 +286,17 @@ function EventsContent() {
                               {event.eventType}
                             </span>
                           </td>
-                          <td className="py-3 px-4 border-b">
-                            {event.label || <span className="text-gray-400">N/A</span>}
+                          <td className="py-3 px-4 border-b truncate max-w-xs">
+                            {event.label 
+                              ? event.label.length > 20 
+                                ? <span title={event.label}>{event.label.substring(0, 20)}...</span> 
+                                : event.label
+                              : <span className="text-gray-400">N/A</span>
+                            }
                           </td>
-                          <td className="py-3 px-4 border-b">
+                          <td className="py-3 px-4 border-b truncate max-w-xs">
                             {(event.eventType === 'Fact' || event.eventType === 'Note') 
-                              ? decodeEventData(event.label, event.data)
+                              ? decodeEventData(event.label, event.data, true) // Truncate in the main row
                               : <span className="text-gray-400">N/A</span>
                             }
                           </td>
@@ -286,8 +310,8 @@ function EventsContent() {
                               aria-label={isExpanded ? "Collapse details" : "Expand details"}
                             >
                               {isExpanded 
-                                ? <ChevronUpIcon className="h-4 w-4" /> 
-                                : <ChevronDownIcon className="h-4 w-4" />
+                                ? <ChevronUpIcon /> 
+                                : <ChevronDownIcon />
                               }
                             </button>
                           </td>
@@ -324,6 +348,7 @@ function EventsContent() {
                                     <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
                                     <div><strong>FactHash:</strong> <code title={String(event.facthash)}>{shortenHash(event.facthash)}</code></div>
                                     <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
+                                    <div><strong>Data:</strong> {decodeEventData(event.label, event.data)}</div>
                                   </>
                                 )}
                                 {event.eventType === 'Note' && (
@@ -331,6 +356,7 @@ function EventsContent() {
                                     <div><strong>Parent:</strong> <code title={String(event.parenthash)}>{shortenHash(event.parenthash)}</code></div>
                                     <div><strong>NoteHash:</strong> <code title={String(event.notehash)}>{shortenHash(event.notehash)}</code></div>
                                     <div><strong>LabelHash:</strong> <code title={String(event.labelhash)}>{shortenHash(event.labelhash)}</code></div>
+                                    <div><strong>Data:</strong> {decodeEventData(event.label, event.data)}</div>
                                   </>
                                 )}
                                 {event.eventType === 'Gene' && (
