@@ -14,19 +14,19 @@
  *
  * @dependencies
  * - react: Core React library for component building.
- * - next/link: For client-side navigation.
  * - ./actions: Server actions (getStatus, extractEvents).
  *
  * @notes
  * - Uses 'use client' directive for client-side interactivity (state, effects, event handlers).
  * - Employs Tailwind CSS for styling.
  * - Extraction process runs recursively chunk by chunk via the `runExtraction` function.
+ * - The top navigation bar is handled by the RootLayout component.
  */
 
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link'; // Keep Link import if needed elsewhere, though not used in this snippet
+// Removed Link import as it's no longer used directly on this page
 import { getStatus, extractEvents } from './actions'; // Assuming actions.ts exports these
 
 /**
@@ -248,7 +248,7 @@ export default function Home() {
             toBlock: prev.progress?.toBlock ?? result.progress.toBlock,
             currentBlock: result.progress.currentBlock,
             completion: result.progress.completion
-         } : prev.progress, // Fallback to previous progress if none provided
+          } : prev.progress, // Fallback to previous progress if none provided
         events: result.events, // Event stats for the processed chunk
         error: result.error // Error details if any
       }));
@@ -311,8 +311,11 @@ export default function Home() {
 
   // ---- JSX Rendering ----
   return (
+    // Main container with padding and background color
     <main className="min-h-screen p-6 bg-gray-50">
+      {/* Centered content area with max-width */}
       <div className="w-full max-w-[1200px] mx-auto">
+        {/* Main title of the dashboard */}
         <h1 className="text-3xl font-bold mb-8 text-center">HyperMap ETL Dashboard</h1>
 
         {/* Responsive container for status cards */}
@@ -357,12 +360,12 @@ export default function Home() {
                   <p className="text-2xl font-semibold">{statusData.processing.lastBlock.toLocaleString()}</p>
                   {statusData.processing.lastBlock > 0 && (
                      <p className="text-xs text-gray-500">
-                        {new Date(statusData.processing.lastBlockTime).toLocaleString()}
-                        {' ('}
-                        {statusData.processing.hoursAgo > 0
-                        ? `${statusData.processing.hoursAgo} hours ago`
-                        : 'Less than an hour ago'}
-                        {')'}
+                       {new Date(statusData.processing.lastBlockTime).toLocaleString()}
+                       {' ('}
+                       {statusData.processing.hoursAgo > 0
+                         ? `${statusData.processing.hoursAgo} hours ago`
+                         : 'Less than an hour ago'}
+                       {')'}
                     </p>
                    )}
 
@@ -372,24 +375,24 @@ export default function Home() {
                 <div>
                   <p className="text-gray-600 text-sm">Latest Block (Base Chain)</p>
                   <p className="text-2xl font-semibold">
-                      {statusData.processing.latestBlockNumber > 0
-                          ? statusData.processing.latestBlockNumber.toLocaleString()
-                          : <span className="text-orange-500 text-lg">Unavailable</span>
-                      }
+                     {statusData.processing.latestBlockNumber > 0
+                         ? statusData.processing.latestBlockNumber.toLocaleString()
+                         : <span className="text-orange-500 text-lg">Unavailable</span>
+                     }
                   </p>
                    {/* Show sync status */}
                    {statusData.processing.latestBlockNumber > 0 && statusData.processing.lastBlock > 0 && (
                        <p className={`text-xs ${statusData.processing.latestBlockNumber - statusData.processing.lastBlock < 10 ? 'text-green-600' : 'text-orange-600'}`}>
-                            {statusData.processing.latestBlockNumber - statusData.processing.lastBlock <= 0
-                                ? 'Fully Synced'
-                                : `${(statusData.processing.latestBlockNumber - statusData.processing.lastBlock).toLocaleString()} blocks behind`
-                            }
+                           {statusData.processing.latestBlockNumber - statusData.processing.lastBlock <= 0
+                               ? 'Fully Synced'
+                               : `${(statusData.processing.latestBlockNumber - statusData.processing.lastBlock).toLocaleString()} blocks behind`
+                           }
                        </p>
                    )}
                 </div>
               </div>
             ) : (
-               // No Data State
+                // No Data State
               <p>No status data available.</p>
             )}
           </div>
@@ -399,35 +402,35 @@ export default function Home() {
             <h2 className="text-xl font-semibold mb-4 border-b pb-2">Events by Type (DB)</h2>
             {statusLoading ? (
                  <div className="flex justify-center items-center h-48">
-                    <div className="animate-spin w-8 h-8 border-t-4 border-blue-500 border-solid rounded-full" role="status">
-                         <span className="sr-only">Loading event types...</span>
+                   <div className="animate-spin w-8 h-8 border-t-4 border-blue-500 border-solid rounded-full" role="status">
+                        <span className="sr-only">Loading event types...</span>
                      </div>
                  </div>
             ) : statusError ? (
-                <div className="text-red-500 p-4 border border-red-200 rounded bg-red-50">
-                    {statusError}
-                </div>
+                 <div className="text-red-500 p-4 border border-red-200 rounded bg-red-50">
+                   {statusError}
+                 </div>
              ) : statusData && statusData.events.byType.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-100 text-left text-gray-600">
-                        <th className="py-2 px-3 font-medium">Type</th>
-                        <th className="py-2 px-3 text-right font-medium">Count</th>
-                        <th className="py-2 px-3 text-right font-medium">%</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {statusData.events.byType.map((event, i) => (
-                        <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                          <td className="py-1.5 px-3">{event.type}</td>
-                          <td className="py-1.5 px-3 text-right">{event.count.toLocaleString()}</td>
-                          <td className="py-1.5 px-3 text-right">{event.percentage}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                 <div className="overflow-x-auto">
+                   <table className="min-w-full text-sm">
+                     <thead>
+                       <tr className="bg-gray-100 text-left text-gray-600">
+                         <th className="py-2 px-3 font-medium">Type</th>
+                         <th className="py-2 px-3 text-right font-medium">Count</th>
+                         <th className="py-2 px-3 text-right font-medium">%</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       {statusData.events.byType.map((event, i) => (
+                         <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                           <td className="py-1.5 px-3">{event.type}</td>
+                           <td className="py-1.5 px-3 text-right">{event.count.toLocaleString()}</td>
+                           <td className="py-1.5 px-3 text-right">{event.percentage}%</td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
             ) : (
               <p>No event data available in the database.</p>
             )}
@@ -486,13 +489,13 @@ export default function Home() {
                 className="w-full bg-blue-600 text-white py-2 px-4 rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300 disabled:cursor-not-allowed transition duration-150 ease-in-out"
               >
                 {extractionStatus.status === 'running' ? (
-                    <div className="flex items-center justify-center">
-                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                         </svg>
-                         <span>Extraction Running...</span>
-                    </div>
+                   <div className="flex items-center justify-center">
+                     <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                       </svg>
+                     <span>Extraction Running...</span>
+                   </div>
                 ) : 'Extract Events'}
               </button>
             </form>
@@ -503,18 +506,18 @@ export default function Home() {
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-sm font-medium">
                     Status: <span className={`font-semibold ${
-                      extractionStatus.status === 'running' ? 'text-blue-600' :
-                      extractionStatus.status === 'completed' ? 'text-green-600' :
-                      extractionStatus.status === 'error' ? 'text-red-600' : 'text-gray-700'
-                    }`}>
+                         extractionStatus.status === 'running' ? 'text-blue-600' :
+                         extractionStatus.status === 'completed' ? 'text-green-600' :
+                         extractionStatus.status === 'error' ? 'text-red-600' : 'text-gray-700'
+                      }`}>
                       {extractionStatus.status.charAt(0).toUpperCase() + extractionStatus.status.slice(1)}
                     </span>
                   </p>
                   {extractionStatus.progress && (
-                    <p className="text-sm text-gray-600">
-                      {extractionStatus.progress.completion}% Complete
-                    </p>
-                  )}
+                     <p className="text-sm text-gray-600">
+                       {extractionStatus.progress.completion}% Complete
+                     </p>
+                   )}
                 </div>
 
                 {/* Progress Bar */}
@@ -522,9 +525,9 @@ export default function Home() {
                   <div className="w-full bg-gray-200 rounded-full h-2.5 mb-3 overflow-hidden">
                     <div
                       className={`h-2.5 rounded-full transition-all duration-300 ease-out ${
-                          extractionStatus.status === 'error' ? 'bg-red-500' :
-                          extractionStatus.status === 'completed' ? 'bg-green-500' : 'bg-blue-600'
-                      }`}
+                           extractionStatus.status === 'error' ? 'bg-red-500' :
+                           extractionStatus.status === 'completed' ? 'bg-green-500' : 'bg-blue-600'
+                       }`}
                       style={{ width: `${Math.min(100, extractionStatus.progress.completion)}%` }}
                       role="progressbar"
                       aria-valuenow={extractionStatus.progress.completion}
@@ -538,8 +541,8 @@ export default function Home() {
                  {/* Progress Details */}
                  {extractionStatus.progress && (
                      <p className="text-xs text-gray-500 mb-3">
-                        Processing Block: {extractionStatus.progress.currentBlock.toLocaleString()}
-                         (Target: {extractionStatus.progress.toBlock > 0 ? extractionStatus.progress.toBlock.toLocaleString() : 'latest'})
+                       Processing Block: {extractionStatus.progress.currentBlock.toLocaleString()}
+                        (Target: {extractionStatus.progress.toBlock > 0 ? extractionStatus.progress.toBlock.toLocaleString() : 'latest'})
                      </p>
                  )}
 
@@ -547,7 +550,7 @@ export default function Home() {
                 {/* Event Stats for Current/Last Chunk */}
                 {extractionStatus.events && (
                   <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-md text-xs">
-                     <p className="font-medium mb-1">Last Chunk Stats ({extractionStatus.progress?.fromBlock.toLocaleString()} - {extractionStatus.progress?.currentBlock.toLocaleString()}):</p>
+                      <p className="font-medium mb-1">Last Chunk Stats ({extractionStatus.progress?.fromBlock.toLocaleString()} - {extractionStatus.progress?.currentBlock.toLocaleString()}):</p>
                     <p>Events Found: <span className="font-semibold">{extractionStatus.events.total.toLocaleString()}</span></p>
                     <p>New Events Stored: <span className="font-semibold text-green-700">{extractionStatus.events.newInChunk.toLocaleString()}</span></p>
                     {/* Optionally show breakdown by type for the chunk */}
@@ -581,7 +584,7 @@ export default function Home() {
                  <p className="text-gray-400 italic">Log is empty.</p>
               ) : (
                 extractionStatus.logs.map((log, i) => (
-                    // Use index as key is acceptable here as logs are append-only
+                  // Use index as key is acceptable here as logs are append-only
                   <div key={i} className="whitespace-pre-wrap break-words">{log}</div>
                 ))
               )}

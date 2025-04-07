@@ -6,13 +6,14 @@
 .cards-container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-  min-height: 400px;
+  gap: 1.5rem; /* Space between cards when stacked vertically */
+  margin-bottom: 2rem; /* Space below the card container */
+  min-height: 400px; /* Ensure container has some minimum height */
 }
 
+/* On medium screens and up, display cards side-by-side */
 @media (min-width: 768px) {
   .cards-container {
-    flex-direction: row;
+    flex-direction: row; /* Arrange cards horizontally */
   }
 }
