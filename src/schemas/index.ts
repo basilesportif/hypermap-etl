@@ -9,7 +9,7 @@ export const HypermapEventSchema = new Schema({
   transactionHash: { type: String, required: true, index: true }, // Bytes32
   transactionIndex: { type: Number, required: true },
   logIndex: { type: Number, required: true },
-  timestamp: { type: Number }, // Optional
+  timestamp: { type: Number, index: true }, // Optional, indexed for date filtering
   
   // Mint event fields - bytes32 (indexed)
   parenthash: { type: String, sparse: true, index: true }, // Bytes32

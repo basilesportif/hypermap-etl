@@ -26,7 +26,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-// Removed Link import as it's no longer used directly on this page
+import Link from 'next/link';
 import { getStatus, extractEvents } from './actions'; // Assuming actions.ts exports these
 
 /**
@@ -422,8 +422,12 @@ export default function Home() {
                      </thead>
                      <tbody>
                        {statusData.events.byType.map((event, i) => (
-                         <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                           <td className="py-1.5 px-3">{event.type}</td>
+                         <tr key={i} className={`border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors duration-150`}>
+                           <td className="py-1.5 px-3">
+                             <Link href={`/events?type=${event.type}`} className="text-blue-600 hover:underline font-medium">
+                               {event.type}
+                             </Link>
+                           </td>
                            <td className="py-1.5 px-3 text-right">{event.count.toLocaleString()}</td>
                            <td className="py-1.5 px-3 text-right">{event.percentage}%</td>
                          </tr>
