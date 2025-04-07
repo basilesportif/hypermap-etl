@@ -76,8 +76,8 @@ function EventsContent() {
         return <code title={String(data)}>{shortenHash(data)}</code>;
       } else {
         const decoded = ethers.toUtf8String(data);
-        if (truncate && decoded.length > 20) {
-          return <span title={decoded}>{decoded.substring(0, 20)}...</span>;
+        if (truncate && decoded.length > 100) {
+          return <span title={decoded}>{decoded.substring(0, 100)}...</span>;
         }
         return decoded;
       }
@@ -286,15 +286,15 @@ function EventsContent() {
                               {event.eventType}
                             </span>
                           </td>
-                          <td className="py-3 px-4 border-b truncate max-w-xs">
+                          <td className="py-3 px-4 border-b truncate max-w-lg">
                             {event.label 
-                              ? event.label.length > 20 
-                                ? <span title={event.label}>{event.label.substring(0, 20)}...</span> 
+                              ? event.label.length > 100 
+                                ? <span title={event.label}>{event.label.substring(0, 100)}...</span> 
                                 : event.label
                               : <span className="text-gray-400">N/A</span>
                             }
                           </td>
-                          <td className="py-3 px-4 border-b truncate max-w-xs">
+                          <td className="py-3 px-4 border-b truncate max-w-lg">
                             {(event.eventType === 'Fact' || event.eventType === 'Note') 
                               ? decodeEventData(event.label, event.data, true) // Truncate in the main row
                               : <span className="text-gray-400">N/A</span>
